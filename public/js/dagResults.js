@@ -212,11 +212,11 @@ function top_down_dag() {
     network_nested = null;
     var selNodes = null;
     var selNodes = network_new.getSelectedNodes();
-    selectedNode = nodes.get(selNodes);
+    selectedNode = box_nodes.get(selNodes);
 
     var nested_container = document.getElementById("nested_dag_container");
 
-    document.getElementById("mr_header").innerHTML = ("MR DAG for job : " + selectedNode[0]["label"]);
+    document.getElementById("mr_header").innerHTML = ("MR DAG for job : " + adjMatrix[selectedNode[0]["id"]]["jobname"]);
 
     $.getJSON('/rest/nesteddagdata?id=' + flowExecId + '&name=' + adjMatrix[selectedNode[0]["id"]]["jobname"],
         function (nested_data) {
@@ -309,11 +309,11 @@ function left_right_dag() {
     network_nested = null;
     var selNodes = null;
     var selNodes = network_new.getSelectedNodes();
-    selectedNode = nodes.get(selNodes);
+    selectedNode = box_nodes.get(selNodes);
 
     var nested_container = document.getElementById("nested_dag_container");
 
-    document.getElementById("mr_header").innerHTML = ("MR DAG for job : " + selectedNode[0]["label"]);
+    document.getElementById("mr_header").innerHTML = ("MR DAG for job : " + adjMatrix[selectedNode[0]["id"]]["jobname"]);
 
     $.getJSON('/rest/nesteddagdata?id=' + flowExecId + '&name=' + adjMatrix[selectedNode[0]["id"]]["jobname"],
         function (nested_data) {
