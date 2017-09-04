@@ -46,7 +46,7 @@ object LegacyDataConverters {
       override def shuffleWriteRecords: Long = 0
       override def inputBytes: Long = 0
       override def details: String = ""
-      override def tasks: Option[collection.Map[Long, TaskData]] = None
+      override def tasks = None
       override def attemptId: Int = 0
       override def stageId: Int = 0
       override def memoryBytesSpilled: Long = 0
@@ -206,7 +206,8 @@ object LegacyDataConverters {
         executorInfo.totalGCTime,
         executorInfo.totalMemoryBytesSpilled,
         executorLogs = Map.empty,
-        peakJvmUsedMemory = Map.empty
+        peakJvmUsedMemory = Map.empty,
+        peakUnifiedMemory = Map.empty
       )
     }
 
