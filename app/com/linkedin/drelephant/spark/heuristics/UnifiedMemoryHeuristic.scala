@@ -73,8 +73,9 @@ object UnifiedMemoryHeuristic {
       data.appConfigurationProperties
 
     lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
+    val executorList : Seq[ExecutorSummary] = executorSummaries.patch(executorSummaries.indexWhere(_.id.equals("driver")), Nil, 1)
 
-    val maxMemory: Long = executorSummaries.head.maxMemory
+    val maxMemory: Long = executorList.head.maxMemory
 
     val DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS =
       SeverityThresholds(low = 0.7 * maxMemory, moderate = 0.6 * maxMemory, severe = 0.4 * maxMemory, critical = 0.2 * maxMemory, ascending = false)
@@ -87,17 +88,17 @@ object UnifiedMemoryHeuristic {
       return DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS.severityOf(jvmPeakUnifiedMemory)
     }
 
-    lazy val meanUnifiedMemory: Long = (executorSummaries.map {
+    lazy val meanUnifiedMemory: Long = (executorList.map {
       _.peakUnifiedMemory.getOrElse(JVM_USED_MEMORY, 0).asInstanceOf[Number].longValue
-    }.sum) / executorSummaries.size
-    lazy val maxUnifiedMemory: Long = (executorSummaries.map {
+    }.sum) / executorList.size
+    lazy val maxUnifiedMemory: Long = (executorList.map {
       _.peakUnifiedMemory.get(JVM_USED_MEMORY)
     }.max).getOrElse(0)
     val severitySkew = DEFAULT_UNIFIED_MEMORY_SKEW_THRESHOLDS.severityOf(maxUnifiedMemory)
 
     lazy val severityPeak: Severity = {
       var severityPeakUnifiedMemoryVariable: Severity = Severity.NONE
-      for (executorSummary <- executorSummaries) {
+      for (executorSummary <- executorList) {
         var peakUnifiedMemoryExecutorSeverity: Severity = getPeakUnifiedMemoryExecutorSeverity(executorSummary)
         if (peakUnifiedMemoryExecutorSeverity.getValue > severityPeakUnifiedMemoryVariable.getValue) {
           severityPeakUnifiedMemoryVariable = peakUnifiedMemoryExecutorSeverity

@@ -13,6 +13,9 @@
 * License for the specific language governing permissions and limitations under
 * the License.
 *@
-<pre>Peak Unified Memory Heuristic : This heuristic whether more memory has been allocated for an executor than being utilised.
-  It also checks for the peak unified memory skew amongst all executors and reports if the skew is significantly more.</pre>
-<p>Other suggestions are provided in the result itself</p>
+<p> This is a heuristic for peak Unified Memory </p>
+<h4>Peak Unified Memory</h4>
+<p>If the ratio of unified memory to executor memory is much smaller than "spark.memory.fraction", then more memory has been reserved for execution than is being used. This memory can instead be allocated for user memory, and/or total executor memory could be reduced.</p>
+<p>spark.memory.fraction: this is the fraction of (executor memory - reserved memory) used for execution and storage. This partitions user memory from execution and storage memory.</p>
+<h4>Unified Memory Skew</h4>
+<p>Skew in the amount of unified memory for different executors might indicates a similar imbalance in the amount of work (and data) for tasks. It should be more balanced.</p>

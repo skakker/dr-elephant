@@ -16,7 +16,6 @@ class UnifiedMemoryHeuristicTest extends FunSpec with Matchers {
 
   val memoryFractionHeuristic = new UnifiedMemoryHeuristic(heuristicConfigurationData)
 
-  val appConfigurationProperties = Map.empty
   val executorData = Seq(
     newDummyExecutorData("1", 400000, Map("jvmUsedMemory" -> 394567)),
     newDummyExecutorData("2", 400000, Map("jvmUsedMemory" -> 234568)),
