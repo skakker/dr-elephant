@@ -58,7 +58,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
 
       it("returns the size of result details") {
-        heuristicResultDetails.size() should be(6)
+        heuristicResultDetails.size() should be(7)
       }
 
       it("returns the severity") {
@@ -100,6 +100,12 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         details.getName should include("spark.dynamicAllocation.enabled")
         details.getValue should be("true")
       }
+
+      it("returns the driver cores") {
+        val details = heuristicResultDetails.get(6)
+        details.getName should include("spark.driver.cores")
+        details.getValue should include("default")
+      }
     }
 
     describe("apply with Severity") {
@@ -114,7 +120,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
 
       it("returns the size of result details") {
-        heuristicResultDetails.size() should be(8)
+        heuristicResultDetails.size() should be(9)
       }
 
       it("returns the severity") {
@@ -128,14 +134,14 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       }
 
       it("returns the serializer") {
-        val details = heuristicResultDetails.get(6)
+        val details = heuristicResultDetails.get(7)
         details.getName should include("spark.serializer")
         details.getValue should be("dummySerializer")
         details.getDetails should be("KyroSerializer is Not Enabled.")
       }
 
       it("returns the shuffle service flag") {
-        val details = heuristicResultDetails.get(7)
+        val details = heuristicResultDetails.get(8)
         details.getName should include("spark.shuffle.service.enabled")
         details.getValue should be("false")
         details.getDetails should be("Spark shuffle service is not enabled.")
@@ -184,9 +190,19 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         evaluator.executorCores should be(Some(2))
       }
 
+      it("has the driver cores when they're present") {
+        val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.driver.cores" -> "3"))
+        evaluator.driverCores should be(Some(3))
+      }
+
       it("has no executor cores when they're absent") {
         val evaluator = newEvaluatorWithConfigurationProperties(Map.empty)
         evaluator.executorCores should be(None)
+      }
+
+      it("has no driver cores when they're absent") {
+        val evaluator = newEvaluatorWithConfigurationProperties(Map.empty)
+        evaluator.driverCores should be(None)
       }
 
       it("has the serializer when it's present") {
@@ -254,6 +270,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         evaluator.isShuffleServiceEnabled should be(Some(false))
         evaluator.serializerSeverity should be(Severity.NONE)
         evaluator.shuffleAndDynamicAllocationSeverity should be(Severity.SEVERE)
+        evaluator.severityConfThresholds should be(Severity.NONE)
         evaluator.severity should be(Severity.SEVERE)
       }
 

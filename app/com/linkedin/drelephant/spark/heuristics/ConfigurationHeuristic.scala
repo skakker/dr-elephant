@@ -22,8 +22,7 @@ import com.linkedin.drelephant.math.Statistics
 
 import scala.collection.JavaConverters
 import scala.util.Try
-
-import com.linkedin.drelephant.analysis.{HeuristicResultDetails, Heuristic, HeuristicResult, Severity}
+import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
 import com.linkedin.drelephant.util.MemoryFormatUtils
@@ -33,7 +32,9 @@ import com.linkedin.drelephant.util.MemoryFormatUtils
   * A heuristic based on an app's known configuration.
   *
   * The results from this heuristic primarily inform users about key app configuration settings, including
-  * driver memory, executor cores, executor instances, executor memory, and the serializer.
+  * driver memory, driver cores, executor cores, executor instances, executor memory, and the serializer.
+  *
+  * It also checks whether the values specified are within threshold.
   */
 class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
     extends Heuristic[SparkApplicationData] {
@@ -76,6 +77,10 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
       new HeuristicResultDetails(
         SPARK_DYNAMIC_ALLOCATION_ENABLED,
         formatProperty(evaluator.isDynamicAllocationEnabled.map(_.toString))
+      ),
+      new HeuristicResultDetails(
+        SPARK_DRIVER_CORES_KEY,
+        formatProperty(evaluator.driverCores.map(_.toString))
       )
     )
     // Constructing a mutable ArrayList for resultDetails, otherwise addResultDetail method HeuristicResult cannot be used.
@@ -113,6 +118,7 @@ object ConfigurationHeuristic {
   val SPARK_APPLICATION_DURATION = "spark.application.duration"
   val SPARK_SHUFFLE_SERVICE_ENABLED = "spark.shuffle.service.enabled"
   val SPARK_DYNAMIC_ALLOCATION_ENABLED = "spark.dynamicAllocation.enabled"
+  val SPARK_DRIVER_CORES_KEY = "spark.driver.cores"
 
   class Evaluator(configurationHeuristic: ConfigurationHeuristic, data: SparkApplicationData) {
     lazy val appConfigurationProperties: Map[String, String] =
@@ -129,6 +135,10 @@ object ConfigurationHeuristic {
 
     lazy val executorCores: Option[Int] =
       Try(getProperty(SPARK_EXECUTOR_CORES_KEY).map(_.toInt)).getOrElse(None)
+
+    lazy val driverCores: Option[Int] =
+      Try(getProperty(SPARK_DRIVER_CORES_KEY).map(_.toInt)).getOrElse(None)
+
 
     lazy val applicationDuration : Long = {
       require(data.applicationInfo.attempts.nonEmpty)
@@ -148,6 +158,20 @@ object ConfigurationHeuristic {
       case Some(_) => DEFAULT_SERIALIZER_IF_NON_NULL_SEVERITY_IF_RECOMMENDATION_UNMET
     }
 
+    //The following thresholds are for checking if the memory and cores values (executor and driver) are above normal. These thresholds are experimental, and may change in the future.
+    val DEFAULT_SPARK_MEMORY_THRESHOLDS =
+      SeverityThresholds(low = MemoryFormatUtils.stringToBytes("10G"), MemoryFormatUtils.stringToBytes("15G"), severe = MemoryFormatUtils.stringToBytes("20G"), critical = MemoryFormatUtils.stringToBytes("25G"), ascending = true)
+    val DEFAULT_SPARK_CORES_THRESHOLDS =
+      SeverityThresholds(low = 4, moderate = 6, severe = 8, critical = 10, ascending = true)
+
+    val severityExecutorMemory = DEFAULT_SPARK_MEMORY_THRESHOLDS.severityOf(executorMemoryBytes.getOrElse(0).asInstanceOf[Number].longValue)
+    val severityDriverMemory = DEFAULT_SPARK_MEMORY_THRESHOLDS.severityOf(driverMemoryBytes.getOrElse(0).asInstanceOf[Number].longValue)
+    val severityDriverCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(driverCores.getOrElse(0).asInstanceOf[Number].intValue)
+    val severityExecutorCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(executorCores.getOrElse(0).asInstanceOf[Number].intValue)
+
+    //Severity for the configuration thresholds
+    val severityConfThresholds : Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory)
+
     /**
      * The following logic computes severity based on shuffle service and dynamic allocation flags.
      * If dynamic allocation is disabled, then the severity will be MODERATE if shuffle service is disabled or not specified.
@@ -163,7 +187,7 @@ object ConfigurationHeuristic {
       case (Some(true), Some(false)) => Severity.SEVERE
     }
 
-    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity)
+    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity, severityConfThresholds)
 
     private val serializerIfNonNullRecommendation: String = configurationHeuristic.serializerIfNonNullRecommendation
 
