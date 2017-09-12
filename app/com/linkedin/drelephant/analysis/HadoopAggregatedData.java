@@ -22,6 +22,7 @@ package com.linkedin.drelephant.analysis;
 public class HadoopAggregatedData {
 
   private long resourceUsed = 0;
+  //variable resourceUsed is actually the resource allocated
   private long resourceWasted = 0;
   private long totalDelay = 0;
 
