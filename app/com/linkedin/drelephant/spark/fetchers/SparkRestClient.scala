@@ -83,6 +83,7 @@ class SparkRestClient(sparkConf: SparkConf) {
       val futureJobDatas = async { getJobDatas(attemptTarget) }
       val futureStageDatas = async { getStageDatas(attemptTarget) }
       val futureExecutorSummaries = async { getExecutorSummaries(attemptTarget) }
+      val futureFailedTasksDatas = async { getStagesWithFailedTasks(attemptTarget) }
       val futureLogData = if (fetchLogs) {
         async { getLogData(attemptTarget)}
       } else Future.successful(None)
@@ -92,6 +93,8 @@ class SparkRestClient(sparkConf: SparkConf) {
         await(futureJobDatas),
         await(futureStageDatas),
         await(futureExecutorSummaries),
+        await(futureFailedTasksDatas),
+        //Seq.empty,
         await(futureLogData)
       )
     }
@@ -209,6 +212,18 @@ class SparkRestClient(sparkConf: SparkConf) {
     } catch {
       case NonFatal(e) => {
         logger.error(s"error reading executorSummary ${target.getUri}", e)
+        throw e
+      }
+    }
+  }
+
+  private def getStagesWithFailedTasks(attemptTarget: WebTarget): Seq[StageDataImpl] = {
+    val target = attemptTarget.path("stages/failedTasks")
+    try {
+      get(target, SparkRestObjectMapper.readValue[Seq[StageDataImpl]])
+    } catch {
+      case NonFatal(e) => {
+        logger.error(s"error reading failedTasks ${target.getUri}", e)
         throw e
       }
     }
