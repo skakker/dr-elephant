@@ -176,11 +176,9 @@ class SparkRestClientTest extends AsyncFunSpec with Matchers {
           case config => config
         }
       }
-
       fakeJerseyServer.setUp()
-
+      
       val historyServerUri = fakeJerseyServer.target.getUri
-
       val sparkConf = new SparkConf().set("spark.yarn.historyServer.address", s"${historyServerUri.getHost}:${historyServerUri.getPort}")
       val sparkRestClient = new SparkRestClient(sparkConf)
 
