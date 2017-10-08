@@ -29,8 +29,7 @@ import scala.util.Try
 
 
 class SparkMetricsAggregator(private val aggregatorConfigurationData: AggregatorConfigurationData)
-  extends HadoopMetricsAggregator {
-
+    extends HadoopMetricsAggregator {
   import SparkMetricsAggregator._
 
   private val logger: Logger = Logger.getLogger(classOf[SparkMetricsAggregator])
