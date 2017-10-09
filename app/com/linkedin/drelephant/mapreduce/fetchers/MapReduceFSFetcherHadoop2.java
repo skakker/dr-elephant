@@ -45,6 +45,8 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Properties;
 import java.util.TimeZone;
 
@@ -86,9 +88,14 @@ public class MapReduceFSFetcherHadoop2 extends MapReduceFetcher {
     logger.info("Using timezone: " + _timeZone.getID());
 
     Configuration conf = new Configuration();
-    this._fs = FileSystem.get(conf);
     this._historyLocation = conf.get("mapreduce.jobhistory.done-dir");
     this._intermediateHistoryLocation = conf.get("mapreduce.jobhistory.intermediate-done-dir");
+    try {
+      URI uri = new URI(this._historyLocation);
+      this._fs = FileSystem.get(uri, conf);
+    } catch( URISyntaxException ex) {
+      this._fs = FileSystem.get(conf);
+    }
     logger.info("Intermediate history dir: " + _intermediateHistoryLocation);
     logger.info("History done dir: " + _historyLocation);
   }
