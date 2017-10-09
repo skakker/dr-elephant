@@ -92,11 +92,11 @@ class StagesHeuristic(private val heuristicConfigurationData: HeuristicConfigura
     )
 
     //adding recommendations to the result, severityTimeA corresponds to the ascending severity calculation
-    if (evaluator.severityTimeA.getValue != Severity.NONE.getValue) {
+    if (evaluator.severityTimeA.getValue > Severity.LOW.getValue) {
       resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The ratio of JVM GC Time and executor Time is above normal, we recommend to increase the executor memory")
     }
     //severityTimeD corresponds to the descending severity calculation
-    if (evaluator.severityTimeD.getValue != Severity.NONE.getValue) {
+    if (evaluator.severityTimeD.getValue > Severity.LOW.getValue) {
       resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The ratio of JVM GC Time and executor Time is below normal, we recommend to decrease the executor memory")
     }
 
