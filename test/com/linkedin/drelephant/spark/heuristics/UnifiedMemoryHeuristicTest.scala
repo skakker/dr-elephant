@@ -17,12 +17,12 @@ class UnifiedMemoryHeuristicTest extends FunSpec with Matchers {
   val memoryFractionHeuristic = new UnifiedMemoryHeuristic(heuristicConfigurationData)
 
   val executorData = Seq(
-    newDummyExecutorData("1", 400000, Map("jvmUsedMemory" -> 394567)),
-    newDummyExecutorData("2", 400000, Map("jvmUsedMemory" -> 234568)),
-    newDummyExecutorData("3", 400000, Map("jvmUsedMemory" -> 334569)),
-    newDummyExecutorData("4", 400000, Map("jvmUsedMemory" -> 23456)),
-    newDummyExecutorData("5", 400000, Map("jvmUsedMemory" -> 234564)),
-    newDummyExecutorData("6", 400000, Map("jvmUsedMemory" -> 394561))
+    newDummyExecutorData("1", 400000, Map("executionMemory" -> 300000, "storageMemory" -> 94567)),
+    newDummyExecutorData("2", 400000, Map("executionMemory" -> 200000, "storageMemory" -> 34568)),
+    newDummyExecutorData("3", 400000, Map("executionMemory" -> 300000, "storageMemory" -> 34569)),
+    newDummyExecutorData("4", 400000, Map("executionMemory" -> 20000, "storageMemory" -> 3456)),
+    newDummyExecutorData("5", 400000, Map("executionMemory" -> 200000, "storageMemory" -> 34564)),
+    newDummyExecutorData("6", 400000, Map("executionMemory" -> 300000, "storageMemory" -> 94561))
   )
   describe(".apply") {
     val data = newFakeSparkApplicationData(executorData)
@@ -43,10 +43,10 @@ object UnifiedMemoryHeuristicTest {
     new HeuristicConfigurationData("heuristic", "class", "view", new ApplicationType("type"), params.asJava)
 
   def newDummyExecutorData(
-                            id: String,
-                            maxMemory: Long,
-                            peakUnifiedMemory: Map[String, Long]
-                          ): ExecutorSummaryImpl = new ExecutorSummaryImpl(
+    id: String,
+    maxMemory: Long,
+    peakUnifiedMemory: Map[String, Long]
+  ): ExecutorSummaryImpl = new ExecutorSummaryImpl(
     id,
     hostPort = "",
     rddBlocks = 0,
@@ -65,11 +65,8 @@ object UnifiedMemoryHeuristicTest {
     peakUnifiedMemory
   )
 
-  def newFakeSparkApplicationData(
-                                   executorSummaries: Seq[ExecutorSummaryImpl]
-                                 ): SparkApplicationData = {
+  def newFakeSparkApplicationData(executorSummaries: Seq[ExecutorSummaryImpl]): SparkApplicationData = {
     val appId = "application_1"
-
     val restDerivedData = SparkRestDerivedData(
       new ApplicationInfoImpl(appId, name = "app", Seq.empty),
       jobDatas = Seq.empty,
