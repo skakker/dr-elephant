@@ -25,7 +25,7 @@ import com.linkedin.drelephant.analysis.{Heuristic, HeuristicResult, HeuristicRe
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.math.Statistics
 import com.linkedin.drelephant.spark.data.SparkApplicationData
-import org.apache.spark.status.api.v1.StageStatus
+import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
 import scala.util.control.Exception
 
 

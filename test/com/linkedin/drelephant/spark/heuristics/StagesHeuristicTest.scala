@@ -25,7 +25,7 @@ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationDa
 import com.linkedin.drelephant.spark.data.{SparkApplicationData, SparkLogDerivedData, SparkRestDerivedData}
 import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ApplicationInfoImpl, JobDataImpl, StageDataImpl, TaskMetricsImpl, TaskDataImpl}
 import org.apache.spark.scheduler.SparkListenerEnvironmentUpdate
-import org.apache.spark.status.api.v1.StageStatus
+import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
 import org.scalatest.{FunSpec, Matchers}
 
 
