@@ -20,9 +20,9 @@ import java.util.Date
 import scala.collection.JavaConverters
 import scala.concurrent.duration.Duration
 import org.apache.spark.scheduler.SparkListenerEnvironmentUpdate
-import org.apache.spark.status.api.v1.StageStatus
 import org.scalatest.{FunSpec, Matchers}
 
+import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
 import com.linkedin.drelephant.analysis.{ApplicationType, Severity}
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.{SparkApplicationData, SparkRestDerivedData}

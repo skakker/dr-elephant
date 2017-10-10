@@ -20,8 +20,8 @@ import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
 import com.linkedin.drelephant.spark.fetchers.statusapiv1.{StageData, TaskData}
+import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
 
-import org.apache.spark.status.api.v1.StageStatus
 import scala.collection.JavaConverters
 
 
