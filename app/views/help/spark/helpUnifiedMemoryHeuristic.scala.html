@@ -17,5 +17,3 @@
 <h4>Peak Unified Memory</h4>
 <p>If the peak unified memory is much smaller than allocated executor memory then we recommend to decrease spark.memory.fraction, or total executor memory.</p>
 <p>spark.memory.fraction: this is the fraction of (executor memory - reserved memory) used for execution and storage. This partitions user memory from execution and storage memory.</p>
-<h4>Unified Memory Skew</h4>
-<p>Skew in the amount of unified memory for different executors might indicate a similar imbalance in the amount of work (and data) for tasks. It should be more balanced.</p>

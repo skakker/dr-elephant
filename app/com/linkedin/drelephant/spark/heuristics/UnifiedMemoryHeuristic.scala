@@ -41,15 +41,12 @@ class UnifiedMemoryHeuristic(private val heuristicConfigurationData: HeuristicCo
     val evaluator = new Evaluator(this, data)
 
     var resultDetails = Seq(
-      new HeuristicResultDetails("Max peak unified memory", evaluator.maxUnifiedMemory.toString),
+      new HeuristicResultDetails("Allocated memory for the unified region", evaluator.maxMemory.toString),
       new HeuristicResultDetails("Mean peak unified memory", evaluator.meanUnifiedMemory.toString)
     )
 
-    if (evaluator.severityPeak.getValue > Severity.LOW.getValue) {
+    if (evaluator.severity.getValue > Severity.LOW.getValue) {
       resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The value of peak unified memory is very low, we recommend to decrease spark.memory.fraction, or total executor memory")
-    }
-    if (evaluator.severitySkew.getValue > Severity.LOW.getValue) {
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "There is an imbalance in the amount of memory used by executors, please look into this to see if it can be distributed more evenly")
     }
     val result = new HeuristicResult(
       heuristicConfigurationData.getClassName,
@@ -72,7 +69,7 @@ object UnifiedMemoryHeuristic {
       data.appConfigurationProperties
 
     lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
-    val executorList : Seq[ExecutorSummary] = executorSummaries.filterNot(_.id.equals("driver"))
+    val executorList: Seq[ExecutorSummary] = executorSummaries.filterNot(_.id.equals("driver"))
 
     //allocated memory for the unified region
     val maxMemory: Long = executorList.head.maxMemory
@@ -80,25 +77,19 @@ object UnifiedMemoryHeuristic {
     val DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS =
       SeverityThresholds(low = 0.7 * maxMemory, moderate = 0.6 * maxMemory, severe = 0.4 * maxMemory, critical = 0.2 * maxMemory, ascending = false)
 
-    val DEFAULT_UNIFIED_MEMORY_SKEW_THRESHOLDS =
-      SeverityThresholds(low = 1.5 * meanUnifiedMemory, moderate = 2 * meanUnifiedMemory, severe = 4 * meanUnifiedMemory, critical = 8 * meanUnifiedMemory, ascending = true)
-
     def getPeakUnifiedMemoryExecutorSeverity(executorSummary: ExecutorSummary): Severity = {
       return DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS.severityOf(executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
         + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue)
     }
 
     lazy val meanUnifiedMemory: Long = (executorList.map {
-      executorSummary=> {executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
-      + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue}
+      executorSummary => {
+        executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
+        + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue
+      }
     }.sum) / executorList.size
-    lazy val maxUnifiedMemory: Long = executorList.map {
-      executorSummary => {executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
-      + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue}
-    }.max
-    val severitySkew = DEFAULT_UNIFIED_MEMORY_SKEW_THRESHOLDS.severityOf(maxUnifiedMemory)
 
-    lazy val severityPeak: Severity = {
+    lazy val severity: Severity = {
       var severityPeakUnifiedMemoryVariable: Severity = Severity.NONE
       for (executorSummary <- executorList) {
         var peakUnifiedMemoryExecutorSeverity: Severity = getPeakUnifiedMemoryExecutorSeverity(executorSummary)
@@ -108,6 +99,6 @@ object UnifiedMemoryHeuristic {
       }
       severityPeakUnifiedMemoryVariable
     }
-    lazy val severity: Severity = Severity.max(severityPeak, severitySkew)
   }
+
 }
