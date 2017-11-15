@@ -178,7 +178,6 @@ trait TaskData{
 trait TaskMetrics{
   def executorDeserializeTime: Long
   def executorRunTime: Long
-  def executorCpuTime: Long
   def resultSize: Long
   def jvmGcTime: Long
   def resultSerializationTime: Long
@@ -384,7 +383,6 @@ class TaskDataImpl(
 class TaskMetricsImpl(
   var executorDeserializeTime: Long,
   var executorRunTime: Long,
-  var executorCpuTime: Long,
   var resultSize: Long,
   var jvmGcTime: Long,
   var resultSerializationTime: Long,

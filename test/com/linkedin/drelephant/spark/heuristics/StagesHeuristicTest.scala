@@ -43,16 +43,16 @@ class StagesHeuristicTest extends FunSpec with Matchers {
     )
     val stagesHeuristic = new StagesHeuristic(heuristicConfigurationData)
     val stageDatas = Seq(
-      newFakeStageData(StageStatus.COMPLETE, 0, jvmGcTime = Duration("2min").toMillis, executorCpuTime = Duration("2min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("2min").toMillis, "foo"),
-      newFakeStageData(StageStatus.COMPLETE, 1, jvmGcTime = Duration("2min").toMillis, executorCpuTime = Duration("2min").toMillis, numCompleteTasks = 8, numFailedTasks = 2, executorRunTime = Duration("2min").toMillis, "bar"),
-      newFakeStageData(StageStatus.COMPLETE, 2, jvmGcTime = Duration("2min").toMillis, executorCpuTime = Duration("2min").toMillis, numCompleteTasks = 6, numFailedTasks = 4, executorRunTime = Duration("2min").toMillis, "baz"),
-      newFakeStageData(StageStatus.FAILED, 3, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("2min").toMillis, numCompleteTasks = 4, numFailedTasks = 6, executorRunTime = Duration("2min").toMillis, "aaa"),
-      newFakeStageData(StageStatus.FAILED, 4, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("2min").toMillis, numCompleteTasks = 2, numFailedTasks = 8, executorRunTime = Duration("2min").toMillis, "zzz"),
-      newFakeStageData(StageStatus.COMPLETE, 5, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("0min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("0min").toMillis, "bbb"),
-      newFakeStageData(StageStatus.COMPLETE, 6, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("30min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("30min").toMillis, "ccc"),
-      newFakeStageData(StageStatus.COMPLETE, 7, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("60min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("60min").toMillis, "ddd"),
-      newFakeStageData(StageStatus.COMPLETE, 8, jvmGcTime = Duration("1min").toMillis, executorCpuTime = Duration("90min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("90min").toMillis, "eee"),
-      newFakeStageData(StageStatus.COMPLETE, 9, jvmGcTime = Duration("2min").toMillis, executorCpuTime = Duration("120min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("120min").toMillis, "fff")
+      newFakeStageData(StageStatus.COMPLETE, 0, jvmGcTime = Duration("2min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("2min").toMillis, "foo"),
+      newFakeStageData(StageStatus.COMPLETE, 1, jvmGcTime = Duration("2min").toMillis, numCompleteTasks = 8, numFailedTasks = 2, executorRunTime = Duration("2min").toMillis, "bar"),
+      newFakeStageData(StageStatus.COMPLETE, 2, jvmGcTime = Duration("2min").toMillis, numCompleteTasks = 6, numFailedTasks = 4, executorRunTime = Duration("2min").toMillis, "baz"),
+      newFakeStageData(StageStatus.FAILED, 3, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 4, numFailedTasks = 6, executorRunTime = Duration("2min").toMillis, "aaa"),
+      newFakeStageData(StageStatus.FAILED, 4, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 2, numFailedTasks = 8, executorRunTime = Duration("2min").toMillis, "zzz"),
+      newFakeStageData(StageStatus.COMPLETE, 5, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("0min").toMillis, "bbb"),
+      newFakeStageData(StageStatus.COMPLETE, 6, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("30min").toMillis, "ccc"),
+      newFakeStageData(StageStatus.COMPLETE, 7, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("60min").toMillis, "ddd"),
+      newFakeStageData(StageStatus.COMPLETE, 8, jvmGcTime = Duration("1min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("90min").toMillis, "eee"),
+      newFakeStageData(StageStatus.COMPLETE, 9, jvmGcTime = Duration("2min").toMillis, numCompleteTasks = 10, numFailedTasks = 0, executorRunTime = Duration("120min").toMillis, "fff")
     )
 
     val appConfigurationProperties = Map("spark.executor.instances" -> "2")
@@ -133,15 +133,15 @@ class StagesHeuristicTest extends FunSpec with Matchers {
         evaluator.jvmTime should be(840000)
       }
 
-      it("has the total executor cpu time") {
-        evaluator.executorCpuTime should be(18600000)
+      it("has the total executor Run time") {
+        evaluator.executorRunTimeTotal should be(18600000)
       }
 
-      it("has ascending severity for ratio of JVM GC time to executor cpu time") {
+      it("has ascending severity for ratio of JVM GC time to executor run time") {
         evaluator.severityTimeA should be(Severity.NONE)
       }
 
-      it("has descending severity for ratio of JVM GC time to executor cpu time") {
+      it("has descending severity for ratio of JVM GC time to executor run time") {
         evaluator.severityTimeD should be(Severity.LOW)
       }
     }
@@ -159,7 +159,6 @@ object StagesHeuristicTest {
     status: StageStatus,
     stageId: Int,
     jvmGcTime: Long,
-    executorCpuTime: Long,
     numCompleteTasks: Int,
     numFailedTasks: Int,
     executorRunTime: Long,
@@ -200,7 +199,6 @@ object StagesHeuristicTest {
       taskMetrics = new Some(new TaskMetricsImpl(
         executorDeserializeTime = 0,
         executorRunTime = 0,
-        executorCpuTime,
         resultSize = 0,
         jvmGcTime,
         resultSerializationTime = 0,

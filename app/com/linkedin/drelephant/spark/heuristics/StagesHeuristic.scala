@@ -86,9 +86,9 @@ class StagesHeuristic(private val heuristicConfigurationData: HeuristicConfigura
         "Spark stages with long average executor runtimes",
         formatStagesWithLongAverageExecutorRuntimes(evaluator.stagesWithLongAverageExecutorRuntimes)
       ),
-      new HeuristicResultDetails("JVM GC time to Executor CPU time ratio", evaluator.ratio.toString),
+      new HeuristicResultDetails("JVM GC time to Executor Run time ratio", evaluator.ratio.toString),
       new HeuristicResultDetails("Jvm GC total time", evaluator.jvmTime.toString),
-      new HeuristicResultDetails("Executor CPU time", evaluator.executorCpuTime.toString)
+      new HeuristicResultDetails("Executor Run time", evaluator.executorRunTimeTotal.toString)
     )
 
     //adding recommendations to the result, severityTimeA corresponds to the ascending severity calculation
@@ -130,12 +130,12 @@ object StagesHeuristic {
     ascending = true
   )
 
-  /** The ascending severity thresholds for the ratio of JVM GC Time and executor CPU Time (checking whether ratio is above normal)
+  /** The ascending severity thresholds for the ratio of JVM GC Time and executor Run Time (checking whether ratio is above normal)
     * These thresholds are experimental and are likely to change */
   val DEFAULT_GC_SEVERITY_A_THRESHOLDS =
     SeverityThresholds(low = 0.08D, moderate = 0.1D, severe = 0.15D, critical = 0.2D, ascending = true)
 
-  /** The descending severity thresholds for the ratio of JVM GC Time and executor CPU Time (checking whether ratio is below normal)
+  /** The descending severity thresholds for the ratio of JVM GC Time and executor Run Time (checking whether ratio is below normal)
     * These thresholds are experimental and are likely to change */
   val DEFAULT_GC_SEVERITY_D_THRESHOLDS =
     SeverityThresholds(low = 0.05D, moderate = 0.04D, severe = 0.03D, critical = 0.01D, ascending = false)
@@ -176,10 +176,10 @@ object StagesHeuristic {
 
     lazy val severity: Severity = Severity.max((stageFailureRateSeverity +: severityTimeA +: severityTimeD +: (taskFailureRateSeverities ++ runtimeSeverities)): _*)
 
-    var (jvmTime, executorCpuTime) = getTimeValues(stageDatas)
+    var (jvmTime, executorRunTimeTotal) = getTimeValues(stageDatas)
 
     var ratio: Double = {
-      ratio = jvmTime.toDouble / executorCpuTime.toDouble
+      ratio = jvmTime.toDouble / executorRunTimeTotal.toDouble
       ratio
     }
     lazy val severityTimeA: Severity = DEFAULT_GC_SEVERITY_A_THRESHOLDS.severityOf(ratio)
@@ -236,17 +236,16 @@ object StagesHeuristic {
     }
 
     /**
-      * returns the total JVM GC Time and total executor CPU Time across all stages
+      * returns the total JVM GC Time and total executor Run Time across all stages
       * @param stageDatas
       * @return
       */
     private def getTimeValues(stageDatas: Seq[StageData]): (Long, Long) = {
       var jvmGcTimeTotal: Long = 0
-      var executorCpuTime: Long = 0
+      var executorRunTimeTotal: Long = 0
       var taskMetricsDummy: TaskMetricsImpl = new Some(new TaskMetricsImpl(
         executorDeserializeTime = 0,
         executorRunTime = 0,
-        executorCpuTime = 0,
         resultSize = 0,
         jvmGcTime = 0,
         resultSerializationTime = 0,
@@ -259,13 +258,13 @@ object StagesHeuristic {
       //ignoring the exception as there are cases when there is no task data, in such cases, 0 is taken as the default value
       Exception.ignoring(classOf[NoSuchElementException]) {
         stageDatas.foreach((stageData: StageData) => {
+          executorRunTimeTotal += stageData.executorRunTime
           stageData.tasks.get.values.foreach((taskData: TaskData) => {
             jvmGcTimeTotal += taskData.taskMetrics.getOrElse(taskMetricsDummy).jvmGcTime
-            executorCpuTime += taskData.taskMetrics.getOrElse(taskMetricsDummy).executorCpuTime
           })
         })
       }
-      (jvmGcTimeTotal, executorCpuTime)
+      (jvmGcTimeTotal, executorRunTimeTotal)
     }
   }
 
