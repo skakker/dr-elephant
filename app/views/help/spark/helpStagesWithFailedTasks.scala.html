@@ -15,4 +15,4 @@
 *@
 <p>Tasks (and stages and jobs) can fail if an error occurs while the task is executing.</p>
 
-<p>Tasks may fail due to Overhead memory issues or OOM errors. These errors are checked and warning is given accordingly.</p>
+<p>Tasks may fail due to Overhead memory issues or OOM errors. Due to errors in tasks, that stage might also fail. It is analysed as to why the tasks failed, if many tasks of the same stage failed due to the same error, etc. Suggestions are given to prevent these errors.</p>

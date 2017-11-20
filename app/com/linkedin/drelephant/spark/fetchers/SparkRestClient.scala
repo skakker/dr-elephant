@@ -94,7 +94,6 @@ class SparkRestClient(sparkConf: SparkConf) {
         await(futureStageDatas),
         await(futureExecutorSummaries),
         await(futureFailedTasksDatas),
-        //Seq.empty,
         await(futureLogData)
       )
     }

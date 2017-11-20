@@ -26,10 +26,11 @@ import scala.collection.JavaConverters
 
 
 /**
-  * A heuristic based on errors encountered by failed tasks
+  * A heuristic based on errors encountered by failed tasks. Tasks may fail due to Overhead memory issues or OOM errors. These errors are checked and warning is given accordingly.
   */
 class StagesWithFailedTasksHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
   extends Heuristic[SparkApplicationData] {
+
   import StagesWithFailedTasksHeuristic._
   import JavaConverters._
 
@@ -41,11 +42,11 @@ class StagesWithFailedTasksHeuristic(private val heuristicConfigurationData: Heu
       new HeuristicResultDetails("Stages with OOM errors", evaluator.stagesWithOOMError.toString),
       new HeuristicResultDetails("Stages with Overhead memory errors", evaluator.stagesWithOverheadError.toString)
     )
-    if(evaluator.severityOverheadStages.getValue >= Severity.MODERATE.getValue)
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Overhead memory errors", "Many tasks have failed due to overhead memory error. please try increasing it by 500MB in spark.yarn.executor.memoryOverhead")
+    if (evaluator.severityOverheadStages.getValue >= Severity.MODERATE.getValue)
+      resultDetails = resultDetails :+ new HeuristicResultDetails("Overhead memory errors", "Many tasks have failed due to overhead memory error. Please try increasing spark.yarn.executor.memoryOverhead by 500MB in spark.yarn.executor.memoryOverhead")
     //TODO: refine recommendations
-    if(evaluator.severityOOMStages.getValue >= Severity.MODERATE.getValue)
-      resultDetails = resultDetails :+ new HeuristicResultDetails("OOM errors", "Many tasks have failed due to OOM error. Kindly check by increasing executor memory, decreasing spark.memory.fraction or decreasing number of cores.")
+    if (evaluator.severityOOMStages.getValue >= Severity.MODERATE.getValue)
+      resultDetails = resultDetails :+ new HeuristicResultDetails("OOM errors", "Many tasks have failed due to OOM error. Try increasing spark.executor.memory or decreasing spark.memory.fraction (take a look at unified memory heuristic) or decreasing number of cores.")
     val result = new HeuristicResult(
       heuristicConfigurationData.getClassName,
       heuristicConfigurationData.getHeuristicName,
@@ -67,13 +68,14 @@ object StagesWithFailedTasksHeuristic {
 
     /**
       * returns the OOM and Overhead memory errors severity
+      *
       * @return
       */
-    private def getErrorsSeverity : (Severity, Severity, Int, Int) = {
-      var severityOOM : Severity = Severity.NONE
-      var severityOverhead : Severity = Severity.NONE
-      var stagesWithOOMError : Int = 0
-      var stagesWithOverheadError : Int = 0
+    private def getErrorsSeverity: (Severity, Severity, Int, Int) = {
+      var severityOOM: Severity = Severity.NONE
+      var severityOverhead: Severity = Severity.NONE
+      var stagesWithOOMError: Int = 0
+      var stagesWithOverheadError: Int = 0
       stagesWithFailedTasks.foreach(stageData => {
         val numCompleteTasks: Int = stageData.numCompleteTasks
         var failedOOMTasks = 0
@@ -83,10 +85,12 @@ object StagesWithFailedTasksHeuristic {
           failedOOMTasks = hasError(errorMessage, OOM_ERROR, failedOOMTasks)
           failedOverheadMemoryTasks = hasError(errorMessage, OVERHEAD_MEMORY_ERROR, failedOverheadMemoryTasks)
         })
-        if(failedOOMTasks > 0)
+        if (failedOOMTasks > 0) {
           stagesWithOOMError = stagesWithOOMError + 1
-        if(failedOverheadMemoryTasks > 0)
+        }
+        if (failedOverheadMemoryTasks > 0) {
           stagesWithOverheadError = stagesWithOverheadError + 1
+        }
         severityOOM = getStageSeverity(failedOOMTasks, stageData.status, severityOOM, numCompleteTasks)
         severityOverhead = getStageSeverity(failedOverheadMemoryTasks, stageData.status, severityOverhead, numCompleteTasks)
       })
@@ -94,31 +98,37 @@ object StagesWithFailedTasksHeuristic {
     }
 
     /**
-      *returns the max (severity of this stage, present severity)
-      * @param stagesWithFailedTasks
+      * returns the max (severity of this stage, present severity)
+      *
+      * @param numFailedTasks
       * @param stageStatus
       * @param severityStage
       * @param numCompleteTasks
       * @return
       */
-    private def getStageSeverity (stagesWithFailedTasks : Int, stageStatus: StageStatus, severityStage: Severity, numCompleteTasks: Int) : Severity = {
-      var severityTemp : Severity = Severity.NONE
-      if(stagesWithFailedTasks !=0 && stageStatus != StageStatus.FAILED){
-        if(stagesWithFailedTasks.toDouble/numCompleteTasks.toDouble < 2.toDouble/100.toDouble)
+    private def getStageSeverity(numFailedTasks: Int, stageStatus: StageStatus, severityStage: Severity, numCompleteTasks: Int): Severity = {
+      var severityTemp: Severity = Severity.NONE
+      if (numFailedTasks != 0 && stageStatus != StageStatus.FAILED) {
+        if (numFailedTasks.toDouble / numCompleteTasks.toDouble < 2.toDouble / 100.toDouble) {
           severityTemp = Severity.MODERATE
-        else severityTemp = Severity.SEVERE
+        }
+        else {
+          severityTemp = Severity.SEVERE
+        }
       }
-      else if(stagesWithFailedTasks!=0 && stageStatus == StageStatus.FAILED && stagesWithFailedTasks/numCompleteTasks > 0)
+      else if (numFailedTasks != 0 && stageStatus == StageStatus.FAILED && numFailedTasks / numCompleteTasks > 0) {
         severityTemp = Severity.CRITICAL
+      }
       return Severity.max(severityTemp, severityStage)
     }
 
     /**
       * checks whether the error message contains the corresponding error
-      * @param errorMessage
-      * @param whichError
-      * @param noTasks
-      * @return
+      *
+      * @param errorMessage : the entire error message
+      * @param whichError : the error we want to search the error message with
+      * @param noTasks : number of tasks having that error
+      * @return : returning the number of tasks having the error.
       */
     private def hasError(errorMessage: String, whichError: String, noTasks: Int): Int = {
       if (errorMessage.contains(whichError))
@@ -126,7 +136,8 @@ object StagesWithFailedTasksHeuristic {
       return noTasks
     }
 
-    lazy val (severityOOMStages : Severity, severityOverheadStages : Severity, stagesWithOOMError : Int, stagesWithOverheadError : Int) = getErrorsSeverity
+    lazy val (severityOOMStages: Severity, severityOverheadStages: Severity, stagesWithOOMError: Int, stagesWithOverheadError: Int) = getErrorsSeverity
     lazy val severity: Severity = Severity.max(severityOverheadStages, severityOOMStages)
   }
+
 }

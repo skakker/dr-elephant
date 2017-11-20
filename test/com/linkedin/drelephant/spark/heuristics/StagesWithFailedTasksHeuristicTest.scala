@@ -97,7 +97,7 @@ object StagesWithFailedTasksHeuristicTest {
     attemptId = 0,
     numActiveTasks = numCompleteTasks,
     numCompleteTasks,
-    numFailedTasks = 0,
+    numFailedTasks = 3,
     executorRunTime = 0,
     inputBytes = 0,
     inputRecords = 0,
