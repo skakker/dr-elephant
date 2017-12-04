@@ -101,11 +101,14 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
       result.addResultDetail(SPARK_SHUFFLE_SERVICE_ENABLED, formatProperty(evaluator.isShuffleServiceEnabled.map(_.toString)),
         "Spark shuffle service is not enabled.")
     }
-    if (evaluator.severityMinExecutors.getValue == Severity.SEVERE) {
+    if (evaluator.severityMinExecutors == Severity.CRITICAL) {
       result.addResultDetail("Minimum Executors", "The minimum executors for Dynamic Allocation should be <=1. Please change it in the spark.dynamicAllocation.minExecutors field.")
     }
-    if (evaluator.severityMaxExecutors.getValue == Severity.SEVERE) {
+    if (evaluator.severityMaxExecutors == Severity.CRITICAL) {
       result.addResultDetail("Maximum Executors", "The maximum executors for Dynamic Allocation should be <=900. Please change it in the spark.dynamicAllocation.maxExecutors field.")
+    }
+    if (evaluator.jarsSeverity == Severity.CRITICAL) {
+      result.addResultDetail("Jars notation", "It is recommended to not use * notation while specifying jars in the field " + SPARK_YARN_JARS)
     }
     result
   }
@@ -128,11 +131,12 @@ object ConfigurationHeuristic {
   val SPARK_DRIVER_CORES_KEY = "spark.driver.cores"
   val SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS = "spark.dynamicAllocation.minExecutors"
   val SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS = "spark.dynamicAllocation.maxExecutors"
+  val SPARK_YARN_JARS = "spark.yarn.secondary.jars"
   val THRESHOLD_MIN_EXECUTORS: Int = 1
   val THRESHOLD_MAX_EXECUTORS: Int = 900
 
   class Evaluator(configurationHeuristic: ConfigurationHeuristic, data: SparkApplicationData) {
-    lazy val  appConfigurationProperties: Map[String, String] =
+    lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
 
     lazy val driverMemoryBytes: Option[Long] =
@@ -162,6 +166,14 @@ object ConfigurationHeuristic {
       (lastApplicationAttemptInfo.endTime.getTime - lastApplicationAttemptInfo.startTime.getTime) / Statistics.SECOND_IN_MS
     }
 
+    lazy val sparkYarnJars: String = getProperty(SPARK_YARN_JARS).getOrElse("")
+
+    lazy val jarsSeverity: Severity = if (sparkYarnJars.contains("*")) {
+        Severity.CRITICAL
+      } else {
+        Severity.NONE
+      }
+
     lazy val serializer: Option[String] = getProperty(SPARK_SERIALIZER_KEY)
 
     /**
@@ -185,18 +197,18 @@ object ConfigurationHeuristic {
     val severityDriverCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(driverCores.getOrElse(0).asInstanceOf[Number].intValue)
     val severityExecutorCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(executorCores.getOrElse(0).asInstanceOf[Number].intValue)
     val severityMinExecutors = if (dynamicMinExecutors.getOrElse(0).asInstanceOf[Number].intValue > THRESHOLD_MIN_EXECUTORS) {
-      Severity.SEVERE
+      Severity.CRITICAL
     } else {
       Severity.NONE
     }
     val severityMaxExecutors = if (dynamicMaxExecutors.getOrElse(0).asInstanceOf[Number].intValue > THRESHOLD_MAX_EXECUTORS) {
-      Severity.SEVERE
+      Severity.CRITICAL
     } else {
       Severity.NONE
     }
 
     //Severity for the configuration thresholds
-    val severityConfThresholds: Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory)
+    val severityConfThresholds: Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory, severityMinExecutors, severityMaxExecutors, jarsSeverity)
 
     /**
       * The following logic computes severity based on shuffle service and dynamic allocation flags.
@@ -213,7 +225,7 @@ object ConfigurationHeuristic {
       case (Some(true), Some(false)) => Severity.SEVERE
     }
 
-    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity, severityConfThresholds, severityMinExecutors, severityMaxExecutors)
+    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity, severityConfThresholds)
 
     private val serializerIfNonNullRecommendation: String = configurationHeuristic.serializerIfNonNullRecommendation
 

@@ -50,7 +50,8 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         "spark.executor.memory" -> "1g",
         "spark.shuffle.memoryFraction" -> "0.5",
         "spark.shuffle.service.enabled" -> "true",
-        "spark.dynamicAllocation.enabled" -> "true"
+        "spark.dynamicAllocation.enabled" -> "true",
+        "spark.yarn.secondary.jars" -> "something without star"
       )
 
       val data = newFakeSparkApplicationData(configurationProperties)
@@ -208,6 +209,16 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       it("has the serializer when it's present") {
         val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.serializer" -> "org.apache.spark.serializer.KryoSerializer"))
         evaluator.serializer should be(Some("org.apache.spark.serializer.KryoSerializer"))
+      }
+
+      it("jars severity when NONE") {
+        val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.yarn.secondary.jars" -> "somethingWithoutStar"))
+        evaluator.jarsSeverity should be(Severity.NONE)
+      }
+
+      it("jars severity when CRITICAL") {
+        val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.yarn.secondary.jars" -> "somethingWith*.jar"))
+        evaluator.jarsSeverity should be(Severity.CRITICAL)
       }
 
       it("has no serializer, dynamic allocation flag, and shuffle flag when they are absent") {
