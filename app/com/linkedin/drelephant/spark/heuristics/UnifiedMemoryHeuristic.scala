@@ -20,6 +20,7 @@ import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
 import com.linkedin.drelephant.spark.fetchers.statusapiv1.ExecutorSummary
+import com.linkedin.drelephant.util.MemoryFormatUtils
 
 import scala.collection.JavaConverters
 
@@ -41,8 +42,8 @@ class UnifiedMemoryHeuristic(private val heuristicConfigurationData: HeuristicCo
     val evaluator = new Evaluator(this, data)
 
     var resultDetails = Seq(
-      new HeuristicResultDetails("Allocated memory for the unified region", evaluator.maxMemory.toString),
-      new HeuristicResultDetails("Mean peak unified memory", evaluator.meanUnifiedMemory.toString)
+      new HeuristicResultDetails("Allocated memory for the unified region", MemoryFormatUtils.bytesToString(evaluator.maxMemory)),
+      new HeuristicResultDetails("Mean peak unified memory", MemoryFormatUtils.bytesToString(evaluator.meanUnifiedMemory))
     )
 
     if (evaluator.severity.getValue > Severity.LOW.getValue) {
