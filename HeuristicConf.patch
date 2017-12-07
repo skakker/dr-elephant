@@ -1,0 +1,357 @@
+diff --git a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java
+new file mode 100644
+index 0000000..5d121b7
+--- /dev/null
++++ b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java
+@@ -0,0 +1,18 @@
++package com.linkedin.drelephant.spark.fetchers.statusapiv1;
++
++import org.apache.spark.util.EnumUtil;
++
++public enum StageStatus {
++  ACTIVE,
++  COMPLETE,
++  FAILED,
++  SKIPPED,
++  PENDING;
++
++  private StageStatus() {
++  }
++
++  public static com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus fromString(String str) {
++    return (com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus) EnumUtil.parseIgnoreCase(com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus.class, str);
++  }
++}
+diff --git a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
+index 1b013c0..c4018b3 100644
+--- a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
++++ b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
+@@ -42,7 +42,6 @@ import java.util.Date
+ import scala.collection.Map
+ 
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
+ import com.fasterxml.jackson.annotation.JsonSubTypes.Type
+ import com.fasterxml.jackson.annotation.{JsonSubTypes, JsonTypeInfo}
+ 
+diff --git a/app/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristic.scala b/app/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristic.scala
+index c4aab51..e7e3cbd 100644
+--- a/app/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristic.scala
++++ b/app/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristic.scala
+@@ -22,8 +22,7 @@ import com.linkedin.drelephant.math.Statistics
+ 
+ import scala.collection.JavaConverters
+ import scala.util.Try
+-
+-import com.linkedin.drelephant.analysis.{HeuristicResultDetails, Heuristic, HeuristicResult, Severity}
++import com.linkedin.drelephant.analysis._
+ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
+ import com.linkedin.drelephant.spark.data.SparkApplicationData
+ import com.linkedin.drelephant.util.MemoryFormatUtils
+@@ -33,7 +32,9 @@ import com.linkedin.drelephant.util.MemoryFormatUtils
+   * A heuristic based on an app's known configuration.
+   *
+   * The results from this heuristic primarily inform users about key app configuration settings, including
+-  * driver memory, executor cores, executor instances, executor memory, and the serializer.
++  * driver memory, driver cores, executor cores, executor instances, executor memory, and the serializer.
++  *
++  * It also checks whether the values specified are within threshold.
+   */
+ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
+     extends Heuristic[SparkApplicationData] {
+@@ -76,6 +77,10 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
+       new HeuristicResultDetails(
+         SPARK_DYNAMIC_ALLOCATION_ENABLED,
+         formatProperty(evaluator.isDynamicAllocationEnabled.map(_.toString))
++      ),
++      new HeuristicResultDetails(
++        SPARK_DRIVER_CORES_KEY,
++        formatProperty(evaluator.driverCores.map(_.toString))
+       )
+     )
+     // Constructing a mutable ArrayList for resultDetails, otherwise addResultDetail method HeuristicResult cannot be used.
+@@ -113,6 +118,7 @@ object ConfigurationHeuristic {
+   val SPARK_APPLICATION_DURATION = "spark.application.duration"
+   val SPARK_SHUFFLE_SERVICE_ENABLED = "spark.shuffle.service.enabled"
+   val SPARK_DYNAMIC_ALLOCATION_ENABLED = "spark.dynamicAllocation.enabled"
++  val SPARK_DRIVER_CORES_KEY = "spark.driver.cores"
+ 
+   class Evaluator(configurationHeuristic: ConfigurationHeuristic, data: SparkApplicationData) {
+     lazy val appConfigurationProperties: Map[String, String] =
+@@ -130,6 +136,10 @@ object ConfigurationHeuristic {
+     lazy val executorCores: Option[Int] =
+       Try(getProperty(SPARK_EXECUTOR_CORES_KEY).map(_.toInt)).getOrElse(None)
+ 
++    lazy val driverCores: Option[Int] =
++      Try(getProperty(SPARK_DRIVER_CORES_KEY).map(_.toInt)).getOrElse(None)
++
++
+     lazy val applicationDuration : Long = {
+       require(data.applicationInfo.attempts.nonEmpty)
+       val lastApplicationAttemptInfo = data.applicationInfo.attempts.last
+@@ -148,6 +158,20 @@ object ConfigurationHeuristic {
+       case Some(_) => DEFAULT_SERIALIZER_IF_NON_NULL_SEVERITY_IF_RECOMMENDATION_UNMET
+     }
+ 
++    //The following thresholds are for checking if the memory and cores values (executor and driver) are above normal. These thresholds are experimental, and may change in the future.
++    val DEFAULT_SPARK_MEMORY_THRESHOLDS =
++      SeverityThresholds(low = MemoryFormatUtils.stringToBytes("10G"), MemoryFormatUtils.stringToBytes("15G"), severe = MemoryFormatUtils.stringToBytes("20G"), critical = MemoryFormatUtils.stringToBytes("25G"), ascending = true)
++    val DEFAULT_SPARK_CORES_THRESHOLDS =
++      SeverityThresholds(low = 4, moderate = 6, severe = 8, critical = 10, ascending = true)
++
++    val severityExecutorMemory = DEFAULT_SPARK_MEMORY_THRESHOLDS.severityOf(executorMemoryBytes.getOrElse(0).asInstanceOf[Number].longValue)
++    val severityDriverMemory = DEFAULT_SPARK_MEMORY_THRESHOLDS.severityOf(driverMemoryBytes.getOrElse(0).asInstanceOf[Number].longValue)
++    val severityDriverCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(driverCores.getOrElse(0).asInstanceOf[Number].intValue)
++    val severityExecutorCores = DEFAULT_SPARK_CORES_THRESHOLDS.severityOf(executorCores.getOrElse(0).asInstanceOf[Number].intValue)
++
++    //Severity for the configuration thresholds
++    val severityConfThresholds : Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory)
++
+     /**
+      * The following logic computes severity based on shuffle service and dynamic allocation flags.
+      * If dynamic allocation is disabled, then the severity will be MODERATE if shuffle service is disabled or not specified.
+@@ -163,7 +187,7 @@ object ConfigurationHeuristic {
+       case (Some(true), Some(false)) => Severity.SEVERE
+     }
+ 
+-    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity)
++    lazy val severity: Severity = Severity.max(serializerSeverity, shuffleAndDynamicAllocationSeverity, severityConfThresholds)
+ 
+     private val serializerIfNonNullRecommendation: String = configurationHeuristic.serializerIfNonNullRecommendation
+ 
+diff --git a/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala b/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
+index dd92f81..b2c36f9 100644
+--- a/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
++++ b/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
+@@ -26,8 +26,7 @@ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationDa
+ import com.linkedin.drelephant.math.Statistics
+ import com.linkedin.drelephant.spark.data.SparkApplicationData
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageData
+-import org.apache.spark.status.api.v1.StageStatus
+-
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ 
+ /**
+   * A heuristic based on metrics for a Spark app's stages.
+diff --git a/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala b/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
+index 0c7412f..e74c9e1 100644
+--- a/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
++++ b/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
+@@ -23,7 +23,7 @@ import scala.util.Try
+ 
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1._
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ 
+ /**
+   * Converters for legacy SparkApplicationData to current SparkApplicationData.
+diff --git a/app/com/linkedin/drelephant/util/SparkUtils.scala b/app/com/linkedin/drelephant/util/SparkUtils.scala
+index e7efd9d..bcb3f3f 100644
+--- a/app/com/linkedin/drelephant/util/SparkUtils.scala
++++ b/app/com/linkedin/drelephant/util/SparkUtils.scala
+@@ -180,7 +180,7 @@ trait SparkUtils {
+   }
+ 
+   private val IN_PROGRESS = ".inprogress"
+-  private val DEFAULT_COMPRESSION_CODEC = "snappy"
++  private val DEFAULT_COMPRESSION_CODEC = "lz4"
+ 
+   private val compressionCodecClassNamesByShortName = Map(
+     "lz4" -> classOf[LZ4CompressionCodec].getName,
+diff --git a/app/views/help/spark/helpConfigurationHeuristic.scala.html b/app/views/help/spark/helpConfigurationHeuristic.scala.html
+index abadd61..2bac42b 100644
+--- a/app/views/help/spark/helpConfigurationHeuristic.scala.html
++++ b/app/views/help/spark/helpConfigurationHeuristic.scala.html
+@@ -14,5 +14,6 @@
+ * the License.
+ *@
+ <p>The results from this heuristic primarily inform you about key app
+-configuration settings, including driver memory, executor cores,
++configuration settings, including driver memory, driver cores, executor cores,
+ executor instances, executor memory, and the serializer.</p>
++<p>It also checks whether the specified values for configuration are above threshold.</p>
+diff --git a/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala b/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
+index 729311b..7b79fbf 100644
+--- a/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
++++ b/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
+@@ -22,8 +22,7 @@ import java.util.zip.{ZipInputStream, ZipEntry, ZipOutputStream}
+ import java.util.{Calendar, Date, SimpleTimeZone}
+ import javax.ws.rs.client.WebTarget
+ 
+-import org.apache.spark.status.api.v1.StageStatus
+-
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import scala.concurrent.ExecutionContext
+ import scala.util.Try
+ import com.fasterxml.jackson.databind.ObjectMapper
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
+index 60c2e6d..ceebe70 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
+@@ -58,7 +58,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
+ 
+       it("returns the size of result details") {
+-        heuristicResultDetails.size() should be(6)
++        heuristicResultDetails.size() should be(7)
+       }
+ 
+       it("returns the severity") {
+@@ -100,6 +100,12 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+         details.getName should include("spark.dynamicAllocation.enabled")
+         details.getValue should be("true")
+       }
++
++      it("returns the driver cores") {
++        val details = heuristicResultDetails.get(6)
++        details.getName should include("spark.driver.cores")
++        details.getValue should include("default")
++      }
+     }
+ 
+     describe("apply with Severity") {
+@@ -114,7 +120,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
+ 
+       it("returns the size of result details") {
+-        heuristicResultDetails.size() should be(8)
++        heuristicResultDetails.size() should be(9)
+       }
+ 
+       it("returns the severity") {
+@@ -128,14 +134,14 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+       }
+ 
+       it("returns the serializer") {
+-        val details = heuristicResultDetails.get(6)
++        val details = heuristicResultDetails.get(7)
+         details.getName should include("spark.serializer")
+         details.getValue should be("dummySerializer")
+         details.getDetails should be("KyroSerializer is Not Enabled.")
+       }
+ 
+       it("returns the shuffle service flag") {
+-        val details = heuristicResultDetails.get(7)
++        val details = heuristicResultDetails.get(8)
+         details.getName should include("spark.shuffle.service.enabled")
+         details.getValue should be("false")
+         details.getDetails should be("Spark shuffle service is not enabled.")
+@@ -184,11 +190,21 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+         evaluator.executorCores should be(Some(2))
+       }
+ 
++      it("has the driver cores when they're present") {
++        val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.driver.cores" -> "3"))
++        evaluator.driverCores should be(Some(3))
++      }
++
+       it("has no executor cores when they're absent") {
+         val evaluator = newEvaluatorWithConfigurationProperties(Map.empty)
+         evaluator.executorCores should be(None)
+       }
+ 
++      it("has no driver cores when they're absent") {
++        val evaluator = newEvaluatorWithConfigurationProperties(Map.empty)
++        evaluator.driverCores should be(None)
++      }
++
+       it("has the serializer when it's present") {
+         val evaluator = newEvaluatorWithConfigurationProperties(Map("spark.serializer" -> "org.apache.spark.serializer.KryoSerializer"))
+         evaluator.serializer should be(Some("org.apache.spark.serializer.KryoSerializer"))
+@@ -254,6 +270,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
+         evaluator.isShuffleServiceEnabled should be(Some(false))
+         evaluator.serializerSeverity should be(Severity.NONE)
+         evaluator.shuffleAndDynamicAllocationSeverity should be(Severity.SEVERE)
++        evaluator.severityConfThresholds should be(Severity.NONE)
+         evaluator.severity should be(Severity.SEVERE)
+       }
+ 
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
+index ee56af3..7e1d8ac 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
+@@ -23,11 +23,10 @@ import com.linkedin.drelephant.analysis.{ApplicationType, Severity}
+ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
+ import com.linkedin.drelephant.spark.data.{SparkApplicationData, SparkLogDerivedData, SparkRestDerivedData}
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ApplicationInfoImpl, JobDataImpl, StageDataImpl}
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import org.apache.spark.scheduler.SparkListenerEnvironmentUpdate
+-import org.apache.spark.status.api.v1.StageStatus
+ import org.scalatest.{FunSpec, Matchers}
+ 
+-
+ class StagesHeuristicTest extends FunSpec with Matchers {
+   import StagesHeuristicTest._
+ 
+diff --git a/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala b/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
+index ad8e751..4369550 100644
+--- a/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
++++ b/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
+@@ -19,10 +19,9 @@ package com.linkedin.drelephant.spark.legacydata
+ import java.util.Date
+ 
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import org.scalatest.{FunSpec, Matchers}
+ 
+-
+ class LegacyDataConvertersTest extends FunSpec with Matchers {
+   describe("LegacyDataConverters") {
+     describe(".convert") {
+diff --git a/test/com/linkedin/drelephant/util/SparkUtilsTest.scala b/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
+index 632b495..aee8fb8 100644
+--- a/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
++++ b/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
+@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.{FSDataInputStream, FileStatus, FileSystem, Path, Pa
+ import org.apache.hadoop.io.compress.CompressionInputStream
+ import org.apache.log4j.Logger
+ import org.apache.spark.SparkConf
+-import org.apache.spark.io.SnappyCompressionCodec
++import org.apache.spark.io.{LZ4CompressionCodec, SnappyCompressionCodec}
+ import org.mockito.BDDMockito
+ import org.mockito.Matchers
+ import org.scalatest.{FunSpec, Matchers, OptionValues}
+@@ -46,8 +46,8 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         }
+ 
+         val (fs, path) = sparkUtils.fileSystemAndPathForEventLogDir(hadoopConfiguration,
+-              sparkConf,
+-              Some("webhdfs://nn1.grid.example.com:50070/logs/spark"))
++          sparkConf,
++          Some("webhdfs://nn1.grid.example.com:50070/logs/spark"))
+         fs.getUri.toString should be("webhdfs://nn1.grid.example.com:50070")
+         path should be(new Path("/logs/spark"))
+       }
+@@ -180,7 +180,7 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         val sparkUtils = SparkUtilsTest.newFakeSparkUtilsForEventLog(
+           new URI("webhdfs://nn1.grid.example.com:50070"),
+           new Path("/logs/spark"),
+-          new Path("application_1_1.snappy"),
++          new Path("application_1_1.lz4"),
+           Array.empty[Byte]
+         )
+ 
+@@ -189,8 +189,8 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         val (path, codec) =
+           sparkUtils.pathAndCodecforEventLog(sparkConf: SparkConf, fs: FileSystem, basePath: Path, "application_1", Some("1"))
+ 
+-        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.snappy"))
+-        codec.value should be(a[SnappyCompressionCodec])
++        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.lz4"))
++        codec.value should be(a[LZ4CompressionCodec])
+       }
+       it("returns the path and codec for the event log, given the base path and appid. Extracts attempt and codec from path") {
+         val hadoopConfiguration = new Configuration(false)
+@@ -300,8 +300,8 @@ object SparkUtilsTest extends MockitoSugar {
+       BDDMockito.given(fs.exists(expectedPath)).willReturn(true)
+       BDDMockito.given(fs.getFileStatus(expectedPath)).willReturn(expectedFileStatus)
+       BDDMockito.given(fs.listStatus(org.mockito.Matchers.refEq(new Path( new Path(fileSystemUri), basePath)),
+-                                      org.mockito.Matchers.any(filter.getClass))).
+-                 willReturn(expectedStatusArray)
++        org.mockito.Matchers.any(filter.getClass))).
++        willReturn(expectedStatusArray)
+       BDDMockito.given(fs.open(expectedPath)).willReturn(
+         new FSDataInputStream(new FakeCompressionInputStream(new ByteArrayInputStream(bytes)))
+       )

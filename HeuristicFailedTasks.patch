@@ -1,0 +1,822 @@
+diff --git a/app-conf/FetcherConf.xml b/app-conf/FetcherConf.xml
+index 4e9f14d..a6789ca 100644
+--- a/app-conf/FetcherConf.xml
++++ b/app-conf/FetcherConf.xml
+@@ -79,7 +79,7 @@
+   -->
+   <fetcher>
+     <applicationtype>spark</applicationtype>
+-    <classname>com.linkedin.drelephant.spark.fetchers.FSFetcher</classname>
++    <classname>com.linkedin.drelephant.spark.fetchers.SparkFetcher</classname>
+   </fetcher>
+ 
+   <!--
+diff --git a/app/com/linkedin/drelephant/spark/data/SparkApplicationData.scala b/app/com/linkedin/drelephant/spark/data/SparkApplicationData.scala
+index 6e6ac59..d3be30f 100644
+--- a/app/com/linkedin/drelephant/spark/data/SparkApplicationData.scala
++++ b/app/com/linkedin/drelephant/spark/data/SparkApplicationData.scala
+@@ -30,7 +30,8 @@ case class SparkApplicationData(
+   applicationInfo: ApplicationInfo,
+   jobDatas: Seq[JobData],
+   stageDatas: Seq[StageData],
+-  executorSummaries: Seq[ExecutorSummary]
++  executorSummaries: Seq[ExecutorSummary],
++  stagesWithFailedTasks: Seq[StageData]
+ ) extends HadoopApplicationData {
+   import SparkApplicationData._
+   import JavaConverters._
+@@ -65,6 +66,7 @@ object SparkApplicationData {
+     val jobDatas = restDerivedData.jobDatas
+     val stageDatas = restDerivedData.stageDatas
+     val executorSummaries = restDerivedData.executorSummaries
+-    apply(appId, appConfigurationProperties, applicationInfo, jobDatas, stageDatas, executorSummaries)
++    val stagesWithFailedTasks = restDerivedData.stagesWithFailedTasks
++    apply(appId, appConfigurationProperties, applicationInfo, jobDatas, stageDatas, executorSummaries, stagesWithFailedTasks)
+   }
+ }
+diff --git a/app/com/linkedin/drelephant/spark/data/SparkRestDerivedData.scala b/app/com/linkedin/drelephant/spark/data/SparkRestDerivedData.scala
+index 1b3a662..eb7ae69 100644
+--- a/app/com/linkedin/drelephant/spark/data/SparkRestDerivedData.scala
++++ b/app/com/linkedin/drelephant/spark/data/SparkRestDerivedData.scala
+@@ -24,4 +24,5 @@ case class SparkRestDerivedData(
+   jobDatas: Seq[JobData],
+   stageDatas: Seq[StageData],
+   executorSummaries: Seq[ExecutorSummary],
++  stagesWithFailedTasks: Seq[StageData],
+   private[spark] val logDerivedData: Option[SparkLogDerivedData] = None)
+diff --git a/app/com/linkedin/drelephant/spark/fetchers/SparkRestClient.scala b/app/com/linkedin/drelephant/spark/fetchers/SparkRestClient.scala
+index ce81ceb..686abe1 100644
+--- a/app/com/linkedin/drelephant/spark/fetchers/SparkRestClient.scala
++++ b/app/com/linkedin/drelephant/spark/fetchers/SparkRestClient.scala
+@@ -83,6 +83,7 @@ class SparkRestClient(sparkConf: SparkConf) {
+       val futureJobDatas = async { getJobDatas(attemptTarget) }
+       val futureStageDatas = async { getStageDatas(attemptTarget) }
+       val futureExecutorSummaries = async { getExecutorSummaries(attemptTarget) }
++      val futureFailedTasksDatas = async { getStagesWithFailedTasks(attemptTarget) }
+       val futureLogData = if (fetchLogs) {
+         async { getLogData(attemptTarget)}
+       } else Future.successful(None)
+@@ -92,6 +93,8 @@ class SparkRestClient(sparkConf: SparkConf) {
+         await(futureJobDatas),
+         await(futureStageDatas),
+         await(futureExecutorSummaries),
++        await(futureFailedTasksDatas),
++        //Seq.empty,
+         await(futureLogData)
+       )
+     }
+@@ -213,6 +216,18 @@ class SparkRestClient(sparkConf: SparkConf) {
+       }
+     }
+   }
++
++  private def getStagesWithFailedTasks(attemptTarget: WebTarget): Seq[StageDataImpl] = {
++    val target = attemptTarget.path("stages/failedTasks")
++    try {
++      get(target, SparkRestObjectMapper.readValue[Seq[StageDataImpl]])
++    } catch {
++      case NonFatal(e) => {
++        logger.error(s"error reading failedTasks ${target.getUri}", e)
++        throw e
++      }
++    }
++  }
+ }
+ 
+ object SparkRestClient {
+@@ -237,4 +252,4 @@ object SparkRestClient {
+ 
+   def get[T](webTarget: WebTarget, converter: String => T): T =
+     converter(webTarget.request(MediaType.APPLICATION_JSON).get(classOf[String]))
+-}
++}
+\ No newline at end of file
+diff --git a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java
+new file mode 100644
+index 0000000..5d121b7
+--- /dev/null
++++ b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/StageStatus.java
+@@ -0,0 +1,18 @@
++package com.linkedin.drelephant.spark.fetchers.statusapiv1;
++
++import org.apache.spark.util.EnumUtil;
++
++public enum StageStatus {
++  ACTIVE,
++  COMPLETE,
++  FAILED,
++  SKIPPED,
++  PENDING;
++
++  private StageStatus() {
++  }
++
++  public static com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus fromString(String str) {
++    return (com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus) EnumUtil.parseIgnoreCase(com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus.class, str);
++  }
++}
+diff --git a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
+index 1b013c0..c4018b3 100644
+--- a/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
++++ b/app/com/linkedin/drelephant/spark/fetchers/statusapiv1/statusapiv1.scala
+@@ -42,7 +42,6 @@ import java.util.Date
+ import scala.collection.Map
+ 
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
+ import com.fasterxml.jackson.annotation.JsonSubTypes.Type
+ import com.fasterxml.jackson.annotation.{JsonSubTypes, JsonTypeInfo}
+ 
+diff --git a/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala b/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
+index dd92f81..b2c36f9 100644
+--- a/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
++++ b/app/com/linkedin/drelephant/spark/heuristics/StagesHeuristic.scala
+@@ -26,8 +26,7 @@ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationDa
+ import com.linkedin.drelephant.math.Statistics
+ import com.linkedin.drelephant.spark.data.SparkApplicationData
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageData
+-import org.apache.spark.status.api.v1.StageStatus
+-
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ 
+ /**
+   * A heuristic based on metrics for a Spark app's stages.
+diff --git a/app/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristic.scala b/app/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristic.scala
+new file mode 100644
+index 0000000..7e2c75a
+--- /dev/null
++++ b/app/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristic.scala
+@@ -0,0 +1,132 @@
++/*
++ * Copyright 2016 LinkedIn Corp.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
++ * use this file except in compliance with the License. You may obtain a copy of
++ * the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++ * License for the specific language governing permissions and limitations under
++ * the License.
++ */
++
++package com.linkedin.drelephant.spark.heuristics
++
++import com.linkedin.drelephant.analysis._
++import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
++import com.linkedin.drelephant.spark.data.SparkApplicationData
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.{StageData, TaskData}
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
++
++import scala.collection.JavaConverters
++
++
++/**
++  * A heuristic based on errors encountered by failed tasks
++  */
++class StagesWithFailedTasksHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
++  extends Heuristic[SparkApplicationData] {
++  import StagesWithFailedTasksHeuristic._
++  import JavaConverters._
++
++  override def getHeuristicConfData(): HeuristicConfigurationData = heuristicConfigurationData
++
++  override def apply(data: SparkApplicationData): HeuristicResult = {
++    val evaluator = new Evaluator(this, data)
++    var resultDetails = Seq(
++      new HeuristicResultDetails("Stages with OOM errors", evaluator.stagesWithOOMError.toString),
++      new HeuristicResultDetails("Stages with Overhead memory errors", evaluator.stagesWithOverheadError.toString)
++    )
++    if(evaluator.severityOverheadStages.getValue >= Severity.MODERATE.getValue)
++      resultDetails = resultDetails :+ new HeuristicResultDetails("Overhead memory errors", "Many tasks have failed due to overhead memory error. please try increasing it by 500MB in spark.yarn.executor.memoryOverhead")
++    //TODO: refine recommendations
++    if(evaluator.severityOOMStages.getValue >= Severity.MODERATE.getValue)
++      resultDetails = resultDetails :+ new HeuristicResultDetails("OOM errors", "Many tasks have failed due to OOM error. Kindly check by increasing executor memory, decreasing spark.memory.fraction or decreasing number of cores.")
++    val result = new HeuristicResult(
++      heuristicConfigurationData.getClassName,
++      heuristicConfigurationData.getHeuristicName,
++      evaluator.severity,
++      0,
++      resultDetails.asJava
++    )
++    result
++  }
++}
++
++object StagesWithFailedTasksHeuristic {
++
++  val OOM_ERROR = "java.lang.OutOfMemoryError"
++  val OVERHEAD_MEMORY_ERROR = "killed by YARN for exceeding memory limits"
++
++  class Evaluator(memoryFractionHeuristic: StagesWithFailedTasksHeuristic, data: SparkApplicationData) {
++    lazy val stagesWithFailedTasks: Seq[StageData] = data.stagesWithFailedTasks
++
++    /**
++      * returns the OOM and Overhead memory errors severity
++      * @return
++      */
++    private def getErrorsSeverity : (Severity, Severity, Int, Int) = {
++      var severityOOM : Severity = Severity.NONE
++      var severityOverhead : Severity = Severity.NONE
++      var stagesWithOOMError : Int = 0
++      var stagesWithOverheadError : Int = 0
++      stagesWithFailedTasks.foreach(stageData => {
++        val numCompleteTasks: Int = stageData.numCompleteTasks
++        var failedOOMTasks = 0
++        var failedOverheadMemoryTasks = 0
++        stageData.tasks.get.values.foreach((taskData: TaskData) => {
++          var errorMessage: String = taskData.errorMessage.getOrElse("")
++          failedOOMTasks = hasError(errorMessage, OOM_ERROR, failedOOMTasks)
++          failedOverheadMemoryTasks = hasError(errorMessage, OVERHEAD_MEMORY_ERROR, failedOverheadMemoryTasks)
++        })
++        if(failedOOMTasks > 0)
++          stagesWithOOMError = stagesWithOOMError + 1
++        if(failedOverheadMemoryTasks > 0)
++          stagesWithOverheadError = stagesWithOverheadError + 1
++        severityOOM = getStageSeverity(failedOOMTasks, stageData.status, severityOOM, numCompleteTasks)
++        severityOverhead = getStageSeverity(failedOverheadMemoryTasks, stageData.status, severityOverhead, numCompleteTasks)
++      })
++      (severityOOM, severityOverhead, stagesWithOOMError, stagesWithOverheadError)
++    }
++
++    /**
++      *returns the max (severity of this stage, present severity)
++      * @param stagesWithFailedTasks
++      * @param stageStatus
++      * @param severityStage
++      * @param numCompleteTasks
++      * @return
++      */
++    private def getStageSeverity (stagesWithFailedTasks : Int, stageStatus: StageStatus, severityStage: Severity, numCompleteTasks: Int) : Severity = {
++      var severityTemp : Severity = Severity.NONE
++      if(stagesWithFailedTasks !=0 && stageStatus != StageStatus.FAILED){
++        if(stagesWithFailedTasks.toDouble/numCompleteTasks.toDouble < 2.toDouble/100.toDouble)
++          severityTemp = Severity.MODERATE
++        else severityTemp = Severity.SEVERE
++      }
++      else if(stagesWithFailedTasks!=0 && stageStatus == StageStatus.FAILED && stagesWithFailedTasks/numCompleteTasks > 0)
++        severityTemp = Severity.CRITICAL
++      return Severity.max(severityTemp, severityStage)
++    }
++
++    /**
++      * checks whether the error message contains the corresponding error
++      * @param errorMessage
++      * @param whichError
++      * @param noTasks
++      * @return
++      */
++    private def hasError(errorMessage: String, whichError: String, noTasks: Int): Int = {
++      if (errorMessage.contains(whichError))
++        return noTasks + 1
++      return noTasks
++    }
++
++    lazy val (severityOOMStages : Severity, severityOverheadStages : Severity, stagesWithOOMError : Int, stagesWithOverheadError : Int) = getErrorsSeverity
++    lazy val severity: Severity = Severity.max(severityOverheadStages, severityOOMStages)
++  }
++}
+\ No newline at end of file
+diff --git a/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala b/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
+index 0c7412f..8afcf0c 100644
+--- a/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
++++ b/app/com/linkedin/drelephant/spark/legacydata/LegacyDataConverters.scala
+@@ -23,7 +23,7 @@ import scala.util.Try
+ 
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1._
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ 
+ /**
+   * Converters for legacy SparkApplicationData to current SparkApplicationData.
+@@ -34,6 +34,35 @@ import org.apache.spark.status.api.v1.StageStatus
+ object LegacyDataConverters {
+   import JavaConverters._
+ 
++  //Currently returns a default object (as this JSON is retrieved from Spark History Server), if spark history server is not used to fetch data, changes are required
++  def extractStagesWithFailedTasks(legacyData: SparkApplicationData): scala.Seq[StageData] = {
++    Seq(new StageData {
++      override def numCompleteTasks: Int = 0
++      override def inputRecords: Long = 0
++      override def shuffleReadBytes: Long = 0
++      override def shuffleWriteBytes: Long = 0
++      override def schedulingPool: String = ""
++      override def outputRecords: Long = 0
++      override def shuffleWriteRecords: Long = 0
++      override def inputBytes: Long = 0
++      override def details: String = ""
++      override def tasks: Option[collection.Map[Long, TaskData]] = None
++      override def attemptId: Int = 0
++      override def stageId: Int = 0
++      override def memoryBytesSpilled: Long = 0
++      override def executorRunTime: Long = 0
++      override def shuffleReadRecords: Long = 0
++      override def outputBytes: Long = 0
++      override def numActiveTasks: Int = 0
++      override def diskBytesSpilled: Long = 0
++      override def numFailedTasks: Int = 0
++      override def accumulatorUpdates: Seq[AccumulableInfo] = Seq.empty
++      override def name: String = ""
++      override def executorSummary: Option[collection.Map[String, ExecutorStageSummary]] = None
++      override def status = StageStatus.COMPLETE
++    })
++  }
++
+   def convert(legacyData: SparkApplicationData): com.linkedin.drelephant.spark.data.SparkApplicationData = {
+     com.linkedin.drelephant.spark.data.SparkApplicationData(
+       legacyData.getAppId,
+@@ -41,7 +70,8 @@ object LegacyDataConverters {
+       extractApplicationInfo(legacyData),
+       extractJobDatas(legacyData),
+       extractStageDatas(legacyData),
+-      extractExecutorSummaries(legacyData)
++      extractExecutorSummaries(legacyData),
++      extractStagesWithFailedTasks(legacyData)
+     )
+   }
+ 
+diff --git a/app/com/linkedin/drelephant/util/SparkUtils.scala b/app/com/linkedin/drelephant/util/SparkUtils.scala
+index e7efd9d..bcb3f3f 100644
+--- a/app/com/linkedin/drelephant/util/SparkUtils.scala
++++ b/app/com/linkedin/drelephant/util/SparkUtils.scala
+@@ -180,7 +180,7 @@ trait SparkUtils {
+   }
+ 
+   private val IN_PROGRESS = ".inprogress"
+-  private val DEFAULT_COMPRESSION_CODEC = "snappy"
++  private val DEFAULT_COMPRESSION_CODEC = "lz4"
+ 
+   private val compressionCodecClassNamesByShortName = Map(
+     "lz4" -> classOf[LZ4CompressionCodec].getName,
+diff --git a/test/com/linkedin/drelephant/spark/SparkMetricsAggregatorTest.scala b/test/com/linkedin/drelephant/spark/SparkMetricsAggregatorTest.scala
+index 3947fdf..488b138 100644
+--- a/test/com/linkedin/drelephant/spark/SparkMetricsAggregatorTest.scala
++++ b/test/com/linkedin/drelephant/spark/SparkMetricsAggregatorTest.scala
+@@ -55,7 +55,8 @@ class SparkMetricsAggregatorTest extends FunSpec with Matchers {
+         applicationInfo,
+         jobDatas = Seq.empty,
+         stageDatas = Seq.empty,
+-        executorSummaries = executorSummaries
++        executorSummaries = executorSummaries,
++        stagesWithFailedTasks = Seq.empty
+       )
+     }
+ 
+@@ -119,7 +120,8 @@ class SparkMetricsAggregatorTest extends FunSpec with Matchers {
+             applicationInfo,
+             jobDatas = Seq.empty,
+             stageDatas = Seq.empty,
+-            executorSummaries = executorSummaries
++            executorSummaries = executorSummaries,
++            stagesWithFailedTasks = Seq.empty
+           )
+ 
+         val data = SparkApplicationData(appId, restDerivedData, Some(logDerivedData))
+diff --git a/test/com/linkedin/drelephant/spark/data/SparkApplicationDataTest.scala b/test/com/linkedin/drelephant/spark/data/SparkApplicationDataTest.scala
+index e6ec6d5..e44c319 100644
+--- a/test/com/linkedin/drelephant/spark/data/SparkApplicationDataTest.scala
++++ b/test/com/linkedin/drelephant/spark/data/SparkApplicationDataTest.scala
+@@ -42,7 +42,8 @@ class SparkApplicationDataTest extends FunSpec with Matchers {
+       new ApplicationInfoImpl(appId, "app", Seq(applicationAttemptInfo)),
+       jobDatas = Seq.empty,
+       stageDatas = Seq.empty,
+-      executorSummaries = Seq.empty
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     val configurationProperties = Map(
+diff --git a/test/com/linkedin/drelephant/spark/fetchers/SparkFetcherTest.scala b/test/com/linkedin/drelephant/spark/fetchers/SparkFetcherTest.scala
+index beb4ad5..0f91855 100644
+--- a/test/com/linkedin/drelephant/spark/fetchers/SparkFetcherTest.scala
++++ b/test/com/linkedin/drelephant/spark/fetchers/SparkFetcherTest.scala
+@@ -59,7 +59,8 @@ class SparkFetcherTest extends FunSpec with Matchers with MockitoSugar {
+       ),
+       jobDatas = Seq.empty,
+       stageDatas = Seq.empty,
+-      executorSummaries = Seq.empty
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     val logDerivedData = SparkLogDerivedData(SparkListenerEnvironmentUpdate(Map.empty))
+diff --git a/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala b/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
+index 729311b..151ed4f 100644
+--- a/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
++++ b/test/com/linkedin/drelephant/spark/fetchers/SparkRestClientTest.scala
+@@ -22,8 +22,7 @@ import java.util.zip.{ZipInputStream, ZipEntry, ZipOutputStream}
+ import java.util.{Calendar, Date, SimpleTimeZone}
+ import javax.ws.rs.client.WebTarget
+ 
+-import org.apache.spark.status.api.v1.StageStatus
+-
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import scala.concurrent.ExecutionContext
+ import scala.util.Try
+ import com.fasterxml.jackson.databind.ObjectMapper
+@@ -173,14 +172,13 @@ class SparkRestClientTest extends AsyncFunSpec with Matchers {
+               .register(classOf[FetchClientModeDataFixtures.StagesResource])
+               .register(classOf[FetchClientModeDataFixtures.ExecutorsResource])
+               .register(classOf[FetchClientModeDataFixtures.LogsResource])
++              .register(classOf[FetchClientModeDataFixtures.StagesWithFailedTasksResource])
+           case config => config
+         }
+       }
+-
+       fakeJerseyServer.setUp()
+-
++      
+       val historyServerUri = fakeJerseyServer.target.getUri
+-
+       val sparkConf = new SparkConf().set("spark.yarn.historyServer.address", s"${historyServerUri.getHost}:${historyServerUri.getPort}")
+       val sparkRestClient = new SparkRestClient(sparkConf)
+ 
+@@ -310,6 +308,9 @@ object SparkRestClientTest {
+ 
+       @Path("applications/{appId}/{attemptId}/logs")
+       def getLogs(): LogsResource = new LogsResource()
++
++      @Path("applications/{appId}/{attemptId}/stages/failedTasks")
++      def getStagesWithFailedTasks(): StagesWithFailedTasksResource = new StagesWithFailedTasksResource()
+     }
+ 
+     @Produces(Array(MediaType.APPLICATION_JSON))
+@@ -360,6 +361,13 @@ object SparkRestClientTest {
+         } else throw new Exception()
+       }
+     }
++
++    @Produces(Array(MediaType.APPLICATION_JSON))
++    class StagesWithFailedTasksResource {
++      @GET
++      def getStagesWithFailedTasks(@PathParam("appId") appId: String, @PathParam("attemptId") attemptId: String): Seq[StageDataImpl] =
++        if (attemptId == "2") Seq.empty else throw new Exception()
++    }
+   }
+ 
+   object FetchClientModeDataFixtures {
+@@ -382,6 +390,9 @@ object SparkRestClientTest {
+ 
+       @Path("applications/{appId}/logs")
+       def getLogs(): LogsResource = new LogsResource()
++
++      @Path("applications/{appId}/stages/failedTasks")
++      def getStagesWithFailedTasks(): StagesWithFailedTasksResource = new StagesWithFailedTasksResource()
+     }
+ 
+     @Produces(Array(MediaType.APPLICATION_JSON))
+@@ -430,6 +441,13 @@ object SparkRestClientTest {
+         Response.ok(newFakeLog(appId, None)).build()
+       }
+     }
++
++    @Produces(Array(MediaType.APPLICATION_JSON))
++    class StagesWithFailedTasksResource {
++      @GET
++      def getStagesWithFailedTasks(@PathParam("appId") appId: String): Seq[StageDataImpl] =
++        Seq.empty
++    }
+   }
+ 
+   def newFakeApplicationAttemptInfo(
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
+index 60c2e6d..775865c 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/ConfigurationHeuristicTest.scala
+@@ -292,7 +292,8 @@ object ConfigurationHeuristicTest {
+       new ApplicationInfoImpl(appId, name = "app", applicationAttempts),
+       jobDatas = Seq.empty,
+       stageDatas = Seq.empty,
+-      executorSummaries = Seq.empty
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     SparkApplicationData(appId, restDerivedData, Some(logDerivedData))
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/ExecutorsHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/ExecutorsHeuristicTest.scala
+index dfdcf4a..967886c 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/ExecutorsHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/ExecutorsHeuristicTest.scala
+@@ -259,7 +259,8 @@ object ExecutorsHeuristicTest {
+       new ApplicationInfoImpl(appId, name = "app", Seq.empty),
+       jobDatas = Seq.empty,
+       stageDatas = Seq.empty,
+-      executorSummaries = executorSummaries
++      executorSummaries = executorSummaries,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     SparkApplicationData(appId, restDerivedData, logDerivedData = None)
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/JobsHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/JobsHeuristicTest.scala
+index 240f80d..c112a31 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/JobsHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/JobsHeuristicTest.scala
+@@ -157,7 +157,8 @@ object JobsHeuristicTest {
+       new ApplicationInfoImpl(appId, name = "app", Seq.empty),
+       jobDatas,
+       stageDatas = Seq.empty,
+-      executorSummaries = Seq.empty
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     SparkApplicationData(appId, restDerivedData, logDerivedData = None)
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
+index ee56af3..92cd21b 100644
+--- a/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
++++ b/test/com/linkedin/drelephant/spark/heuristics/StagesHeuristicTest.scala
+@@ -23,11 +23,10 @@ import com.linkedin.drelephant.analysis.{ApplicationType, Severity}
+ import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
+ import com.linkedin.drelephant.spark.data.{SparkApplicationData, SparkLogDerivedData, SparkRestDerivedData}
+ import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ApplicationInfoImpl, JobDataImpl, StageDataImpl}
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import org.apache.spark.scheduler.SparkListenerEnvironmentUpdate
+-import org.apache.spark.status.api.v1.StageStatus
+ import org.scalatest.{FunSpec, Matchers}
+ 
+-
+ class StagesHeuristicTest extends FunSpec with Matchers {
+   import StagesHeuristicTest._
+ 
+@@ -179,7 +178,8 @@ object StagesHeuristicTest {
+       new ApplicationInfoImpl(appId, name = "app", Seq.empty),
+       jobDatas = Seq.empty,
+       stageDatas = stageDatas,
+-      executorSummaries = Seq.empty
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = Seq.empty
+     )
+ 
+     val logDerivedData = SparkLogDerivedData(
+diff --git a/test/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristicTest.scala b/test/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristicTest.scala
+new file mode 100644
+index 0000000..e38ef4d
+--- /dev/null
++++ b/test/com/linkedin/drelephant/spark/heuristics/StagesWithFailedTasksHeuristicTest.scala
+@@ -0,0 +1,166 @@
++/*
++ * Copyright 2016 LinkedIn Corp.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
++ * use this file except in compliance with the License. You may obtain a copy of
++ * the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++ * License for the specific language governing permissions and limitations under
++ * the License.
++ */
++
++package com.linkedin.drelephant.spark.heuristics
++
++import java.util.Date
++import scala.collection.JavaConverters
++import scala.concurrent.duration.Duration
++import org.apache.spark.scheduler.SparkListenerEnvironmentUpdate
++import org.scalatest.{FunSpec, Matchers}
++
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
++import com.linkedin.drelephant.analysis.{ApplicationType, Severity}
++import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
++import com.linkedin.drelephant.spark.data.{SparkApplicationData, SparkRestDerivedData}
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ApplicationInfoImpl, StageDataImpl, TaskDataImpl}
++
++
++class StagesWithFailedTasksHeuristicTest extends FunSpec with Matchers {
++  import StagesWithFailedTasksHeuristicTest._
++
++  val OOM_ERROR = "java.lang.OutOfMemoryError"
++  val OVERHEAD_MEMORY_ERROR = "killed by YARN for exceeding memory limits"
++
++  describe("StagesHeuristic") {
++    val heuristicConfigurationData = newFakeHeuristicConfigurationData()
++    val stagesWithFailedTasksHeuristic = new StagesWithFailedTasksHeuristic(heuristicConfigurationData)
++    val failedTaskData = Seq(
++      newFakeStageData(StageStatus.COMPLETE, 0, numCompleteTasks = 10, OOM_ERROR, OVERHEAD_MEMORY_ERROR),
++      newFakeStageData(StageStatus.COMPLETE, 1, numCompleteTasks = 100, OOM_ERROR, OVERHEAD_MEMORY_ERROR),
++      newFakeStageData(StageStatus.COMPLETE, 2, numCompleteTasks = 5, OOM_ERROR, ""),
++      newFakeStageData(StageStatus.FAILED, 3, numCompleteTasks = 3, OVERHEAD_MEMORY_ERROR, OVERHEAD_MEMORY_ERROR),
++      newFakeStageData(StageStatus.FAILED, 4, numCompleteTasks = 102, OVERHEAD_MEMORY_ERROR, OVERHEAD_MEMORY_ERROR),
++      newFakeStageData(StageStatus.COMPLETE, 5, numCompleteTasks = 100, OOM_ERROR, OOM_ERROR),
++      newFakeStageData(StageStatus.COMPLETE, 6, numCompleteTasks = 10, OOM_ERROR, ""),
++      newFakeStageData(StageStatus.COMPLETE, 7, numCompleteTasks = 10, OOM_ERROR, OVERHEAD_MEMORY_ERROR),
++      newFakeStageData(StageStatus.COMPLETE, 8, numCompleteTasks = 10, "", ""),
++      newFakeStageData(StageStatus.COMPLETE, 9, numCompleteTasks = 20, OOM_ERROR, OOM_ERROR)
++    )
++    val appConfigurationProperties = Map.empty
++
++    describe(".apply") {
++      val data = newFakeSparkApplicationData(failedTaskData)
++      val heuristicResult = stagesWithFailedTasksHeuristic.apply(data)
++      val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
++
++      it("returns the severity") {
++        heuristicResult.getSeverity should be(Severity.SEVERE)
++      }
++    }
++
++    describe(".Evaluator") {
++      import StagesWithFailedTasksHeuristic.Evaluator
++      val data = newFakeSparkApplicationData(failedTaskData)
++      val evaluator = new Evaluator(stagesWithFailedTasksHeuristic, data)
++
++      it("has OOM and Overhead severity") {
++        evaluator.severityOOMStages should be(Severity.SEVERE)
++        evaluator.severityOverheadStages should be (Severity.SEVERE)
++      }
++      it("has correct number of stages having error") {
++        evaluator.stagesWithOOMError should be (7)
++        evaluator.stagesWithOverheadError should be (5)
++      }
++    }
++  }
++}
++
++object StagesWithFailedTasksHeuristicTest {
++  import JavaConverters._
++
++  def newFakeHeuristicConfigurationData(params: Map[String, String] = Map.empty): HeuristicConfigurationData =
++    new HeuristicConfigurationData("heuristic", "class", "view", new ApplicationType("type"), params.asJava)
++
++  def newFakeStageData(
++    status: StageStatus,
++    stageId: Int,
++    numCompleteTasks: Int,
++    error1: String,
++    error2: String
++   ): StageDataImpl = new StageDataImpl(
++    status,
++    stageId,
++    attemptId = 0,
++    numActiveTasks = numCompleteTasks,
++    numCompleteTasks,
++    numFailedTasks = 0,
++    executorRunTime = 0,
++    inputBytes = 0,
++    inputRecords = 0,
++    outputBytes = 0,
++    outputRecords = 0,
++    shuffleReadBytes = 0,
++    shuffleReadRecords = 0,
++    shuffleWriteBytes = 0,
++    shuffleWriteRecords = 0,
++    memoryBytesSpilled = 0,
++    diskBytesSpilled = 0,
++    name = "foo",
++    details = "",
++    schedulingPool = "",
++    accumulatorUpdates = Seq.empty,
++    tasks = new Some(Map(0.toLong -> new TaskDataImpl(
++      taskId = 0,
++      index = 1,
++      attempt = 0,
++      launchTime = new Date(),
++      executorId = "1",
++      host = "SomeHost",
++      taskLocality = "ANY",
++      speculative = false,
++      accumulatorUpdates = Seq(),
++      errorMessage = Some(error1),
++      taskMetrics = None), 1.toLong -> new TaskDataImpl(
++      taskId = 1,
++      index = 1,
++      attempt = 0,
++      launchTime = new Date(),
++      executorId = "1",
++      host = "SomeHost",
++      taskLocality = "ANY",
++      speculative = false,
++      accumulatorUpdates = Seq(),
++      errorMessage = Some(error2),
++      taskMetrics = None), 2.toLong -> new TaskDataImpl(
++      taskId = 1,
++      index = 1,
++      attempt = 0,
++      launchTime = new Date(),
++      executorId = "1",
++      host = "SomeHost",
++      taskLocality = "ANY",
++      speculative = false,
++      accumulatorUpdates = Seq(),
++      errorMessage = None,
++      taskMetrics = None)
++    )),
++    executorSummary = None
++  )
++
++  def newFakeSparkApplicationData
++  (stagesWithFailedTasks: Seq[StageDataImpl]): SparkApplicationData = {
++    val appId = "application_1"
++    val restDerivedData = SparkRestDerivedData(
++      new ApplicationInfoImpl(appId, name = "app", Seq.empty),
++      jobDatas = Seq.empty,
++      stageDatas = Seq.empty,
++      executorSummaries = Seq.empty,
++      stagesWithFailedTasks = stagesWithFailedTasks
++    )
++    SparkApplicationData(appId, restDerivedData, None)
++  }
++}
+\ No newline at end of file
+diff --git a/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala b/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
+index ad8e751..4369550 100644
+--- a/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
++++ b/test/com/linkedin/drelephant/spark/legacydata/LegacyDataConvertersTest.scala
+@@ -19,10 +19,9 @@ package com.linkedin.drelephant.spark.legacydata
+ import java.util.Date
+ 
+ import org.apache.spark.JobExecutionStatus
+-import org.apache.spark.status.api.v1.StageStatus
++import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
+ import org.scalatest.{FunSpec, Matchers}
+ 
+-
+ class LegacyDataConvertersTest extends FunSpec with Matchers {
+   describe("LegacyDataConverters") {
+     describe(".convert") {
+diff --git a/test/com/linkedin/drelephant/util/InfoExtractorTest.java b/test/com/linkedin/drelephant/util/InfoExtractorTest.java
+index b1c262d..4bed700 100644
+--- a/test/com/linkedin/drelephant/util/InfoExtractorTest.java
++++ b/test/com/linkedin/drelephant/util/InfoExtractorTest.java
+@@ -280,7 +280,8 @@ public class InfoExtractorTest {
+         new ApplicationInfoImpl("", "", new Vector<ApplicationAttemptInfoImpl>(0,1,0)),
+             new Vector<JobData>(0,1,0),
+             new Vector<StageData>(0,1,0),
+-            new Vector<ExecutorSummary>(0,1,0));
++            new Vector<ExecutorSummary>(0,1,0),
++            new Vector<StageData>(0,1,0));
+ 
+     InfoExtractor.loadInfo(result, data);
+ 
+@@ -301,7 +302,8 @@ public class InfoExtractorTest {
+         new ApplicationInfoImpl("", "", new Vector<ApplicationAttemptInfoImpl>(0,1,0)),
+         new Vector<JobData>(0,1,0),
+         new Vector<StageData>(0,1,0),
+-        new Vector<ExecutorSummary>(0,1,0));
++        new Vector<ExecutorSummary>(0,1,0),
++        new Vector<StageData>(0,1,0));
+ 
+     // test to make sure loadInfo does not throw exception if properties are not defined
+     InfoExtractor.loadInfo(result, data);
+diff --git a/test/com/linkedin/drelephant/util/SparkUtilsTest.scala b/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
+index 632b495..aee8fb8 100644
+--- a/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
++++ b/test/com/linkedin/drelephant/util/SparkUtilsTest.scala
+@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.{FSDataInputStream, FileStatus, FileSystem, Path, Pa
+ import org.apache.hadoop.io.compress.CompressionInputStream
+ import org.apache.log4j.Logger
+ import org.apache.spark.SparkConf
+-import org.apache.spark.io.SnappyCompressionCodec
++import org.apache.spark.io.{LZ4CompressionCodec, SnappyCompressionCodec}
+ import org.mockito.BDDMockito
+ import org.mockito.Matchers
+ import org.scalatest.{FunSpec, Matchers, OptionValues}
+@@ -46,8 +46,8 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         }
+ 
+         val (fs, path) = sparkUtils.fileSystemAndPathForEventLogDir(hadoopConfiguration,
+-              sparkConf,
+-              Some("webhdfs://nn1.grid.example.com:50070/logs/spark"))
++          sparkConf,
++          Some("webhdfs://nn1.grid.example.com:50070/logs/spark"))
+         fs.getUri.toString should be("webhdfs://nn1.grid.example.com:50070")
+         path should be(new Path("/logs/spark"))
+       }
+@@ -180,7 +180,7 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         val sparkUtils = SparkUtilsTest.newFakeSparkUtilsForEventLog(
+           new URI("webhdfs://nn1.grid.example.com:50070"),
+           new Path("/logs/spark"),
+-          new Path("application_1_1.snappy"),
++          new Path("application_1_1.lz4"),
+           Array.empty[Byte]
+         )
+ 
+@@ -189,8 +189,8 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
+         val (path, codec) =
+           sparkUtils.pathAndCodecforEventLog(sparkConf: SparkConf, fs: FileSystem, basePath: Path, "application_1", Some("1"))
+ 
+-        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.snappy"))
+-        codec.value should be(a[SnappyCompressionCodec])
++        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.lz4"))
++        codec.value should be(a[LZ4CompressionCodec])
+       }
+       it("returns the path and codec for the event log, given the base path and appid. Extracts attempt and codec from path") {
+         val hadoopConfiguration = new Configuration(false)
+@@ -300,8 +300,8 @@ object SparkUtilsTest extends MockitoSugar {
+       BDDMockito.given(fs.exists(expectedPath)).willReturn(true)
+       BDDMockito.given(fs.getFileStatus(expectedPath)).willReturn(expectedFileStatus)
+       BDDMockito.given(fs.listStatus(org.mockito.Matchers.refEq(new Path( new Path(fileSystemUri), basePath)),
+-                                      org.mockito.Matchers.any(filter.getClass))).
+-                 willReturn(expectedStatusArray)
++        org.mockito.Matchers.any(filter.getClass))).
++        willReturn(expectedStatusArray)
+       BDDMockito.given(fs.open(expectedPath)).willReturn(
+         new FSDataInputStream(new FakeCompressionInputStream(new ByteArrayInputStream(bytes)))
+       )
