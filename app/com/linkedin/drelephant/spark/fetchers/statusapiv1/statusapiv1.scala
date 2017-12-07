@@ -87,7 +87,7 @@ trait ExecutorSummary{
   def totalShuffleRead: Long
   def totalShuffleWrite: Long
   def maxMemory: Long
-  def totalMemoryBytesSpilled: Long
+  def totalGCTime: Long
   def executorLogs: Map[String, String]}
 
 trait JobData{
@@ -293,7 +293,7 @@ class ExecutorSummaryImpl(
   var totalShuffleRead: Long,
   var totalShuffleWrite: Long,
   var maxMemory: Long,
-  var totalMemoryBytesSpilled: Long,
+  var totalGCTime: Long,
   var executorLogs: Map[String, String]) extends ExecutorSummary
 
 class JobDataImpl(
