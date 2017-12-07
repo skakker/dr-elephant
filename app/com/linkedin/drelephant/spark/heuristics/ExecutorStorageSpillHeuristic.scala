@@ -17,7 +17,7 @@
 package com.linkedin.drelephant.spark.heuristics
 
 import com.linkedin.drelephant.analysis.Severity
-import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ExecutorStageSummary, StageData}
+import com.linkedin.drelephant.spark.fetchers.statusapiv1.{ExecutorStageSummary, ExecutorSummary, StageData}
 import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
@@ -41,7 +41,10 @@ class ExecutorStorageSpillHeuristic(private val heuristicConfigurationData: Heur
   override def apply(data: SparkApplicationData): HeuristicResult = {
     val evaluator = new Evaluator(this, data)
     var resultDetails = Seq(
-      new HeuristicResultDetails("Total memory spilled", MemoryFormatUtils.bytesToString(evaluator.totalMemorySpilled))
+      new HeuristicResultDetails("Total memory spilled", MemoryFormatUtils.bytesToString(evaluator.totalMemorySpilled)),
+      new HeuristicResultDetails("Max memory spilled", MemoryFormatUtils.bytesToString(evaluator.maxMemorySpilled)),
+      new HeuristicResultDetails("Mean memory spilled", MemoryFormatUtils.bytesToString(evaluator.meanMemorySpilled)),
+      new HeuristicResultDetails("Fraction of executors having non zero bytes spilled", evaluator.fractionOfExecutorsHavingBytesSpilled.toString)
     )
 
     if(evaluator.severity != Severity.NONE){
@@ -67,45 +70,35 @@ object ExecutorStorageSpillHeuristic {
   val SPARK_EXECUTOR_CORES = "spark.executor.cores"
 
   class Evaluator(memoryFractionHeuristic: ExecutorStorageSpillHeuristic, data: SparkApplicationData) {
+    lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
-    lazy val stageDatas: Seq[StageData] = data.stageDatas
-    val ratioMemoryCores: Double = sparkExecutorMemory.toDouble / sparkExecutorCores.toDouble
-    lazy val (severity, totalMemorySpilled : Long) = getExecutionSpillSeverity()
-    def getExecutionSpillSeverity(): (Severity, Long) = {
-      var bytesSpilled : Long = 0
-      var executionSpillSeverity = Severity.NONE
-      stageDatas.foreach(stageData => {
-        val executorStageList: collection.Map[String, ExecutorStageSummary] = stageData.executorSummary.getOrElse(Map.empty)
-        val maxMemorySpilled: Long = executorStageList.values.map(_.memoryBytesSpilled).max
-        val meanMemorySpilled = executorStageList.values.map(_.memoryBytesSpilled).sum / executorStageList.values.size
-        val ratioMemoryBytesSpilled: Double = executorStageList.values.count(_.memoryBytesSpilled > 0).toDouble / executorStageList.values.size.toDouble
-        bytesSpilled += executorStageList.values.count(_.memoryBytesSpilled > 0).toLong
-        val severityExecutionSpillStage: Severity = {
-          if (ratioMemoryBytesSpilled != 0) {
-            if (ratioMemoryBytesSpilled < 0.2 && maxMemorySpilled < 0.05 * ratioMemoryCores) {
-              Severity.LOW
-            }
-            else if (ratioMemoryBytesSpilled < 0.2 && meanMemorySpilled < 0.05 * ratioMemoryCores) {
-              Severity.MODERATE
-            }
-
-            else if (ratioMemoryBytesSpilled >= 0.2 && meanMemorySpilled < 0.05 * ratioMemoryCores) {
-              Severity.SEVERE
-            }
-            else if (ratioMemoryBytesSpilled >= 0.2 && meanMemorySpilled >= 0.05 * ratioMemoryCores) {
-              Severity.CRITICAL
-            }
-          }
-          Severity.NONE
+    val ratioMemoryCores: Long = (sparkExecutorMemory / sparkExecutorCores)
+    val maxMemorySpilled: Long = executorSummaries.map(_.totalMemoryBytesSpilled).max
+    val meanMemorySpilled = executorSummaries.map(_.totalMemoryBytesSpilled).sum / executorSummaries.size
+    val totalMemorySpilled = executorSummaries.map(_.totalMemoryBytesSpilled).sum
+    val fractionOfExecutorsHavingBytesSpilled: Double = executorSummaries.count(_.totalMemoryBytesSpilled > 0).toDouble / executorSummaries.size.toDouble
+    val severity: Severity = {
+      if (fractionOfExecutorsHavingBytesSpilled != 0) {
+        if (fractionOfExecutorsHavingBytesSpilled < 0.2 && maxMemorySpilled < 0.05 * ratioMemoryCores) {
+          Severity.LOW
         }
-        executionSpillSeverity = Severity.max(executionSpillSeverity, severityExecutionSpillStage)
-      })
-      (executionSpillSeverity, bytesSpilled)
+        else if (fractionOfExecutorsHavingBytesSpilled < 0.2 && meanMemorySpilled < 0.05 * ratioMemoryCores) {
+          Severity.MODERATE
+        }
+
+        else if (fractionOfExecutorsHavingBytesSpilled >= 0.2 && meanMemorySpilled < 0.05 * ratioMemoryCores) {
+          Severity.SEVERE
+        }
+        else if (fractionOfExecutorsHavingBytesSpilled >= 0.2 && meanMemorySpilled >= 0.05 * ratioMemoryCores) {
+          Severity.CRITICAL
+        } else Severity.NONE
+      }
+      else Severity.NONE
     }
 
-    val sparkExecutorMemory: Long = (appConfigurationProperties.get(SPARK_EXECUTOR_MEMORY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0L)
-    val sparkExecutorCores: Int = (appConfigurationProperties.get(SPARK_EXECUTOR_CORES).map(_.toInt)).getOrElse(0)
+    lazy val sparkExecutorMemory: Long = (appConfigurationProperties.get(SPARK_EXECUTOR_MEMORY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0)
+    lazy val sparkExecutorCores: Int = (appConfigurationProperties.get(SPARK_EXECUTOR_CORES).map(_.toInt)).getOrElse(0)
   }
 }
 

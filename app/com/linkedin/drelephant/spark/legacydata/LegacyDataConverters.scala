@@ -173,6 +173,7 @@ object LegacyDataConverters {
         executorInfo.shuffleRead,
         executorInfo.shuffleWrite,
         executorInfo.maxMem,
+        executorInfo.totalMemoryBytesSpilled,
         executorLogs = Map.empty
       )
     }
