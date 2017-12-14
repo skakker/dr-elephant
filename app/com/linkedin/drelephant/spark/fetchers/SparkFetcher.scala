@@ -41,6 +41,7 @@ class SparkFetcher(fetcherConfigurationData: FetcherConfigurationData)
   import ExecutionContext.Implicits.global
 
   private val logger: Logger = Logger.getLogger(classOf[SparkFetcher])
+  val fetchFailedTasks : Boolean = Option(fetcherConfigurationData.getParamMap.get(FETCH_FAILED_TASKS)).getOrElse("false").toBoolean
 
   val eventLogUri = Option(fetcherConfigurationData.getParamMap.get(LOG_LOCATION_URI_XML_FIELD))
   logger.info("The event log location of Spark application is set to " + eventLogUri)
@@ -77,17 +78,17 @@ class SparkFetcher(fetcherConfigurationData: FetcherConfigurationData)
   }
 
   override def fetchData(analyticJob: AnalyticJob): SparkApplicationData = {
-    doFetchData(analyticJob) match {
+    doFetchData(analyticJob, fetchFailedTasks) match {
       case Success(data) => data
       case Failure(e) => throw e
     }
   }
 
-  private def doFetchData(analyticJob: AnalyticJob): Try[SparkApplicationData] = {
+  private def doFetchData(analyticJob: AnalyticJob, fetchFailedTasks: Boolean): Try[SparkApplicationData] = {
     val appId = analyticJob.getAppId
     logger.info(s"Fetching data for ${appId}")
     Try {
-      Await.result(doFetchSparkApplicationData(analyticJob), DEFAULT_TIMEOUT)
+      Await.result(doFetchSparkApplicationData(analyticJob, fetchFailedTasks), DEFAULT_TIMEOUT)
     }.transform(
       data => {
         logger.info(s"Succeeded fetching data for ${appId}")
@@ -100,19 +101,19 @@ class SparkFetcher(fetcherConfigurationData: FetcherConfigurationData)
     )
   }
 
-  private def doFetchSparkApplicationData(analyticJob: AnalyticJob): Future[SparkApplicationData] = {
+  private def doFetchSparkApplicationData(analyticJob: AnalyticJob, fetchFailedTasks: Boolean): Future[SparkApplicationData] = {
     if (shouldProcessLogsLocally) {
       async {
         sparkRestClient.fetchEventLogAndParse(analyticJob.getAppId)
       }
     } else {
-      doFetchDataUsingRestAndLogClients(analyticJob)
+      doFetchDataUsingRestAndLogClients(analyticJob, fetchFailedTasks)
     }
   }
 
-  private def doFetchDataUsingRestAndLogClients(analyticJob: AnalyticJob): Future[SparkApplicationData] = async {
+  private def doFetchDataUsingRestAndLogClients(analyticJob: AnalyticJob, fetchFailedTasks: Boolean): Future[SparkApplicationData] = async {
     val appId = analyticJob.getAppId
-    val restDerivedData = await(sparkRestClient.fetchData(appId, eventLogSource == EventLogSource.Rest))
+    val restDerivedData = await(sparkRestClient.fetchData(appId, eventLogSource == EventLogSource.Rest, fetchFailedTasks))
 
     val logDerivedData = eventLogSource match {
       case EventLogSource.None => None
@@ -143,4 +144,5 @@ object SparkFetcher {
   val SPARK_EVENT_LOG_ENABLED_KEY = "spark.eventLog.enabled"
   val DEFAULT_TIMEOUT = Duration(60, SECONDS)
   val LOG_LOCATION_URI_XML_FIELD = "event_log_location_uri"
+  val FETCH_FAILED_TASKS = "fetch_failed_tasks"
 }

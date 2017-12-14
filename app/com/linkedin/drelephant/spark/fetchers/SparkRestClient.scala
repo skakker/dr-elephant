@@ -16,7 +16,7 @@
 
 package com.linkedin.drelephant.spark.fetchers
 
-import java.io.{InputStream, BufferedInputStream}
+import java.io.{BufferedInputStream, InputStream}
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.zip.ZipInputStream
@@ -73,7 +73,7 @@ class SparkRestClient(sparkConf: SparkConf) {
 
   private val apiTarget: WebTarget = client.target(historyServerUri).path(API_V1_MOUNT_PATH)
 
-  def fetchData(appId: String, fetchLogs: Boolean = false)(
+  def fetchData(appId: String, fetchLogs: Boolean = false, fetchFailedTasks: Boolean = true)(
     implicit ec: ExecutionContext
   ): Future[SparkRestDerivedData] = {
     val (applicationInfo, attemptTarget) = getApplicationMetaData(appId)
@@ -83,19 +83,29 @@ class SparkRestClient(sparkConf: SparkConf) {
       val futureJobDatas = async { getJobDatas(attemptTarget) }
       val futureStageDatas = async { getStageDatas(attemptTarget) }
       val futureExecutorSummaries = async { getExecutorSummaries(attemptTarget) }
-      val futureFailedTasksDatas = async { getStagesWithFailedTasks(attemptTarget) }
       val futureLogData = if (fetchLogs) {
         async { getLogData(attemptTarget)}
       } else Future.successful(None)
 
-      SparkRestDerivedData(
-        applicationInfo,
-        await(futureJobDatas),
-        await(futureStageDatas),
-        await(futureExecutorSummaries),
-        await(futureFailedTasksDatas),
-        await(futureLogData)
-      )
+      if(fetchFailedTasks) {
+        val futureFailedTasksDatas = async { getStagesWithFailedTasks(attemptTarget) }
+        SparkRestDerivedData(
+          applicationInfo,
+          await(futureJobDatas),
+          await(futureStageDatas),
+          await(futureExecutorSummaries),
+          await(futureFailedTasksDatas),
+          await(futureLogData))
+      } else {
+        SparkRestDerivedData(
+          applicationInfo,
+          await(futureJobDatas),
+          await(futureStageDatas),
+          await(futureExecutorSummaries),
+          Seq.empty,
+          await(futureLogData)
+        )
+      }
     }
   }
 
