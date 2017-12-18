@@ -30,15 +30,11 @@ class ExecutorStorageSpillHeuristicTest extends FunSpec with Matchers {
 
   describe("ExecutorStorageSpillHeuristic") {
     val heuristicConfigurationData = newFakeHeuristicConfigurationData(
-      Map(
-        "max_to_median_ratio_severity_thresholds" -> "1.414,2,4,16",
-        "ignore_max_bytes_less_than_threshold" -> "4000000",
-        "ignore_max_millis_less_than_threshold" -> "4000001"
-      )
+      Map.empty
     )
     val executorStorageSpillHeuristic = new ExecutorStorageSpillHeuristic(heuristicConfigurationData)
 
-    val appConfigurationProperties = Map("spark.executor.memory" -> "4g", "spark.executor.cores"->"4")
+    val appConfigurationProperties = Map("spark.executor.memory" -> "4g", "spark.executor.cores"->"4", "spark.executor.instances"->"4")
 
     val executorSummaries = Seq(
       newFakeExecutorSummary(
