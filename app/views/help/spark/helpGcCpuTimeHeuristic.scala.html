@@ -1,6 +1,12 @@
-<p>The ratio of jvmGcTime to executorCpuTime is checked, to see if GC is taking too much time (providing more memory could help) or too little time (memory may be over provisioned, and can be reduced).</p>
+<p>The ratio of jvmGcTime to executorRunTime is checked, to see if GC is taking too much time (providing more memory could help) or too little time (memory may be over provisioned, and can be reduced).</p>
 <p>The severity thresholds are as follows : </p>
-<p>Low: avg (jvmGcTime / executorCpuTime) >= .08</p>
-<p>Moderate: avg (jvmGcTime / executorCpuTime) >= .1</p>
-<p>Critical: avg (jvmGcTime / executorCpuTime) >= .15</p>
-<p>Severe:avg (jvmGcTime / executorCpuTime) >= .2</p>
+<p>Low: avg (jvmGcTime / executorRunTime) >= .08</p>
+<p>Moderate: avg (jvmGcTime / executorRunTime) >= .1</p>
+<p>Critical: avg (jvmGcTime / executorRunTime) >= .15</p>
+<p>Severe:avg (jvmGcTime / executorRunTime) >= .2</p>
+<p>The severity thresholds in case it is taking too little time are as follows: </p>
+<p>Low: avg (jvmGcTime / executorRunTime) < .05)</p>
+<p>Moderate: avg (jvmGcTime / executorRunTime) < .04)</p>
+<p>Critical: avg (jvmGcTime / executorRunTime) < .03)</p>
+<p>Severe: avg (jvmGcTime / executorRunTime) < .01)</p>
+

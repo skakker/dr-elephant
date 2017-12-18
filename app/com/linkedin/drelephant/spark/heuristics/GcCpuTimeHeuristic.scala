@@ -21,17 +21,25 @@ import com.linkedin.drelephant.spark.fetchers.statusapiv1._
 import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
+
 import scala.collection.JavaConverters
 
 /**
   * A heuristic based on GC time and CPU run time
-  *
   */
 class GcCpuTimeHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
   extends Heuristic[SparkApplicationData] {
 
   import GcCpuTimeHeuristic._
   import JavaConverters._
+
+  val gcSeverityAThresholds: SeverityThresholds =
+    SeverityThresholds.parse(heuristicConfigurationData.getParamMap.get(GC_SEVERITY_A_THRESHOLDS_KEY), ascending = true)
+      .getOrElse(DEFAULT_GC_SEVERITY_A_THRESHOLDS)
+
+  val gcSeverityDThresholds: SeverityThresholds =
+    SeverityThresholds.parse(heuristicConfigurationData.getParamMap.get(GC_SEVERITY_D_THRESHOLDS_KEY), ascending = true)
+      .getOrElse(DEFAULT_GC_SEVERITY_D_THRESHOLDS)
 
   override def getHeuristicConfData(): HeuristicConfigurationData = heuristicConfigurationData
 
@@ -77,7 +85,10 @@ object GcCpuTimeHeuristic {
   val DEFAULT_GC_SEVERITY_D_THRESHOLDS =
     SeverityThresholds(low = 0.05D, moderate = 0.04D, severe = 0.03D, critical = 0.01D, ascending = false)
 
-  class Evaluator(memoryFractionHeuristic: GcCpuTimeHeuristic, data: SparkApplicationData) {
+  val GC_SEVERITY_A_THRESHOLDS_KEY: String = "gc_severity_A_threshold"
+  val GC_SEVERITY_D_THRESHOLDS_KEY: String = "gc_severity_D_threshold"
+
+  class Evaluator(gcCpuTimeHeuristic: GcCpuTimeHeuristic, data: SparkApplicationData) {
     lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
@@ -85,8 +96,8 @@ object GcCpuTimeHeuristic {
 
     var ratio: Double = jvmTime.toDouble / executorRunTimeTotal.toDouble
 
-    lazy val severityTimeA: Severity = DEFAULT_GC_SEVERITY_A_THRESHOLDS.severityOf(ratio)
-    lazy val severityTimeD: Severity = DEFAULT_GC_SEVERITY_D_THRESHOLDS.severityOf(ratio)
+    lazy val severityTimeA: Severity = gcCpuTimeHeuristic.gcSeverityAThresholds.severityOf(ratio)
+    lazy val severityTimeD: Severity = gcCpuTimeHeuristic.gcSeverityAThresholds.severityOf(ratio)
     lazy val severity : Severity = Severity.max(severityTimeA, severityTimeD)
 
     /**

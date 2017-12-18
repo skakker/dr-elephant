@@ -195,7 +195,7 @@
   </heuristic>
   <heuristic>
     <applicationtype>spark</applicationtype>
-    <heuristicname>Spark GC Time to CPU Time</heuristicname>
+    <heuristicname>Spark GC Time to Run Time</heuristicname>
     <classname>com.linkedin.drelephant.spark.heuristics.GcCpuTimeHeuristic</classname>
     <viewname>views.html.help.spark.helpGcCpuTimeHeuristic</viewname>
   </heuristic>
