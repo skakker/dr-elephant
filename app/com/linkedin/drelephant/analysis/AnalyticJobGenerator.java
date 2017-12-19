@@ -59,4 +59,5 @@ public interface AnalyticJobGenerator {
    * @param job The job to add
    */
   public void addIntoRetries(AnalyticJob job);
+  public void addIntoSecondRetryQueue(AnalyticJob job);
 }

@@ -194,6 +194,10 @@ public class ElephantRunner implements Runnable {
         if (_analyticJob != null && _analyticJob.retry()) {
           logger.error("Add analytic job id [" + _analyticJob.getAppId() + "] into the retry list.");
           _analyticJobGenerator.addIntoRetries(_analyticJob);
+        }
+        else if (_analyticJob != null && _analyticJob.secondRetry()) {
+          logger.error("Add analytic job id [" + _analyticJob.getAppId() + "] into the second retry list.");
+          _analyticJobGenerator.addIntoSecondRetryQueue(_analyticJob);
         } else {
           if (_analyticJob != null) {
             MetricsController.markSkippedJob();

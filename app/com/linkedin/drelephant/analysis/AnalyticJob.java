@@ -37,9 +37,23 @@ public class AnalyticJob {
 
   private static final String UNKNOWN_JOB_TYPE = "Unknown";   // The default job type when the data matches nothing.
   private static final int _RETRY_LIMIT = 3;                  // Number of times a job needs to be tried before dropping
+  private static final int _SECOND_RETRY_LIMIT = 5;
   private static final String EXCLUDE_JOBTYPE = "exclude_jobtypes_filter"; // excluded Job Types for heuristic
 
+
+  public boolean readyForSecondRetry() {
+    this._timeLeftToRetry = this._timeLeftToRetry - 1;
+    return (this._timeLeftToRetry <= 0);
+  }
+
+  public AnalyticJob setTimeToSecondRetry() {
+    this._timeLeftToRetry = (this._secondRetries)*5;
+    return this;
+  }
+
+  private int _timeLeftToRetry;
   private int _retries = 0;
+  private int _secondRetries = 0;
   private ApplicationType _type;
   private String _appId;
   private String _name;
@@ -313,6 +327,10 @@ public class AnalyticJob {
     InfoExtractor.loadInfo(result, data);
 
     return result;
+  }
+
+  public boolean secondRetry(){
+    return (_secondRetries++) < _SECOND_RETRY_LIMIT;
   }
 
   /**
