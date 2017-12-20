@@ -8,7 +8,6 @@ package com.linkedin.drelephant.spark.fetchers.statusapiv1;
 
 import org.apache.spark.util.EnumUtil;
 
-// added this class to accomodate the status "PENDING" for stages.
 public enum StageStatus {
   ACTIVE,
   COMPLETE,

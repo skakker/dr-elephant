@@ -43,10 +43,10 @@ class StagesWithFailedTasksHeuristic(private val heuristicConfigurationData: Heu
       new HeuristicResultDetails("Stages with Overhead memory errors", evaluator.stagesWithOverheadError.toString)
     )
     if (evaluator.severityOverheadStages.getValue >= Severity.MODERATE.getValue)
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Overhead memory errors", "Many tasks have failed due to overhead memory error. Please try increasing spark.yarn.executor.memoryOverhead by 500MB in spark.yarn.executor.memoryOverhead")
+      resultDetails = resultDetails :+ new HeuristicResultDetails("Overhead memory errors", "Some tasks have failed due to overhead memory error. Please try increasing spark.yarn.executor.memoryOverhead by 500MB in spark.yarn.executor.memoryOverhead")
     //TODO: refine recommendations
     if (evaluator.severityOOMStages.getValue >= Severity.MODERATE.getValue)
-      resultDetails = resultDetails :+ new HeuristicResultDetails("OOM errors", "Many tasks have failed due to OOM error. Try increasing spark.executor.memory or decreasing spark.memory.fraction (take a look at unified memory heuristic) or decreasing number of cores.")
+      resultDetails = resultDetails :+ new HeuristicResultDetails("OOM errors", "Some tasks have failed due to OOM error. Try increasing spark.executor.memory or decreasing spark.memory.fraction (take a look at unified memory heuristic) or decreasing number of cores.")
     val result = new HeuristicResult(
       heuristicConfigurationData.getClassName,
       heuristicConfigurationData.getHeuristicName,
@@ -62,14 +62,13 @@ object StagesWithFailedTasksHeuristic {
 
   val OOM_ERROR = "java.lang.OutOfMemoryError"
   val OVERHEAD_MEMORY_ERROR = "killed by YARN for exceeding memory limits"
+  val ratioThreshold : Double = 2
 
   class Evaluator(memoryFractionHeuristic: StagesWithFailedTasksHeuristic, data: SparkApplicationData) {
     lazy val stagesWithFailedTasks: Seq[StageData] = data.stagesWithFailedTasks
 
     /**
-      * returns the OOM and Overhead memory errors severity
-      *
-      * @return
+      * @return : returns the OOM and Overhead memory errors severity
       */
     private def getErrorsSeverity: (Severity, Severity, Int, Int) = {
       var severityOOM: Severity = Severity.NONE
@@ -109,7 +108,7 @@ object StagesWithFailedTasksHeuristic {
     private def getStageSeverity(numFailedTasks: Int, stageStatus: StageStatus, severityStage: Severity, numCompleteTasks: Int): Severity = {
       var severityTemp: Severity = Severity.NONE
       if (numFailedTasks != 0 && stageStatus != StageStatus.FAILED) {
-        if (numFailedTasks.toDouble / numCompleteTasks.toDouble < 2.toDouble / 100.toDouble) {
+        if (numFailedTasks.toDouble / numCompleteTasks.toDouble < ratioThreshold / 100.toDouble) {
           severityTemp = Severity.MODERATE
         }
         else {
