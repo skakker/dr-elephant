@@ -51,7 +51,8 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         "spark.shuffle.memoryFraction" -> "0.5",
         "spark.shuffle.service.enabled" -> "true",
         "spark.dynamicAllocation.enabled" -> "true",
-        "spark.yarn.secondary.jars" -> "something without star"
+        "spark.yarn.secondary.jars" -> "something without star",
+        "spark.yarn.driver.memoryOverhead" -> "500"
       )
 
       val data = newFakeSparkApplicationData(configurationProperties)
@@ -59,7 +60,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
 
       it("returns the size of result details") {
-        heuristicResultDetails.size() should be(7)
+        heuristicResultDetails.size() should be(9)
       }
 
       it("returns the severity") {
@@ -107,6 +108,12 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
         details.getName should include("spark.driver.cores")
         details.getValue should include("default")
       }
+
+      it("returns the driver overhead memory") {
+        val details = heuristicResultDetails.get(7)
+        details.getName should include("spark.yarn.driver.memoryOverhead")
+        details.getValue should include("500 MB")
+      }
     }
 
     describe("apply with Severity") {
@@ -121,7 +128,7 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
 
       it("returns the size of result details") {
-        heuristicResultDetails.size() should be(9)
+        heuristicResultDetails.size() should be(11)
       }
 
       it("returns the severity") {
@@ -135,14 +142,14 @@ class ConfigurationHeuristicTest extends FunSpec with Matchers {
       }
 
       it("returns the serializer") {
-        val details = heuristicResultDetails.get(7)
+        val details = heuristicResultDetails.get(9)
         details.getName should include("spark.serializer")
         details.getValue should be("dummySerializer")
         details.getDetails should be("KyroSerializer is Not Enabled.")
       }
 
       it("returns the shuffle service flag") {
-        val details = heuristicResultDetails.get(8)
+        val details = heuristicResultDetails.get(10)
         details.getName should include("spark.shuffle.service.enabled")
         details.getValue should be("false")
         details.getDetails should be("Spark shuffle service is not enabled.")

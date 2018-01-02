@@ -17,16 +17,13 @@
 package com.linkedin.drelephant.spark.heuristics
 
 import java.util.ArrayList
-
-import com.linkedin.drelephant.math.Statistics
-
 import scala.collection.JavaConverters
 import scala.util.Try
 import com.linkedin.drelephant.analysis._
 import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData
 import com.linkedin.drelephant.spark.data.SparkApplicationData
 import com.linkedin.drelephant.util.MemoryFormatUtils
-
+import com.linkedin.drelephant.math.Statistics
 
 /**
   * A heuristic based on an app's known configuration.
@@ -41,6 +38,9 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
 
   import ConfigurationHeuristic._
   import JavaConverters._
+
+  val sparkOverheadMemoryThreshold: SeverityThresholds = SeverityThresholds.parse(heuristicConfigurationData.getParamMap.get(SPARK_OVERHEAD_MEMORY_THRESHOLD_KEY), ascending = true)
+    .getOrElse(DEFAULT_SPARK_OVERHEAD_MEMORY_THRESHOLDS)
 
   val serializerIfNonNullRecommendation: String =
     Option(heuristicConfigurationData.getParamMap.get(SERIALIZER_IF_NON_NULL_RECOMMENDATION_KEY))
@@ -82,6 +82,14 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
       new HeuristicResultDetails(
         SPARK_DRIVER_CORES_KEY,
         formatProperty(evaluator.driverCores.map(_.toString))
+      ),
+      new HeuristicResultDetails(
+        SPARK_YARN_DRIVER_MEMORY_OVERHEAD,
+        evaluator.sparkYarnDriverMemoryOverhead
+      ),
+      new HeuristicResultDetails(
+        SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD,
+        evaluator.sparkYarnExecutorMemoryOverhead
       )
     )
     // Constructing a mutable ArrayList for resultDetails, otherwise addResultDetail method HeuristicResult cannot be used.
@@ -110,6 +118,12 @@ class ConfigurationHeuristic(private val heuristicConfigurationData: HeuristicCo
     if (evaluator.jarsSeverity == Severity.CRITICAL) {
       result.addResultDetail("Jars notation", "It is recommended to not use * notation while specifying jars in the field " + SPARK_YARN_JARS)
     }
+    if(evaluator.severityDriverMemoryOverhead.getValue >= Severity.SEVERE.getValue) {
+      result.addResultDetail("Driver Overhead Memory", "Please do not specify excessive amount of overhead memory for Driver. Change it in the field " + SPARK_YARN_DRIVER_MEMORY_OVERHEAD)
+    }
+    if(evaluator.severityExecutorMemoryOverhead.getValue >= Severity.SEVERE.getValue) {
+      result.addResultDetail("Executor Overhead Memory", "Please do not specify excessive amount of overhead memory for Executors. Change it in the field " + SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD)
+    }
     result
   }
 }
@@ -132,8 +146,14 @@ object ConfigurationHeuristic {
   val SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS = "spark.dynamicAllocation.minExecutors"
   val SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS = "spark.dynamicAllocation.maxExecutors"
   val SPARK_YARN_JARS = "spark.yarn.secondary.jars"
+  val SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD = "spark.yarn.executor.memoryOverhead"
+  val SPARK_YARN_DRIVER_MEMORY_OVERHEAD = "spark.yarn.driver.memoryOverhead"
   val THRESHOLD_MIN_EXECUTORS: Int = 1
   val THRESHOLD_MAX_EXECUTORS: Int = 900
+  val SPARK_OVERHEAD_MEMORY_THRESHOLD_KEY = "spark.overheadMemory.thresholds.key"
+  val DEFAULT_SPARK_OVERHEAD_MEMORY_THRESHOLDS =
+    SeverityThresholds(low = MemoryFormatUtils.stringToBytes("2G"), MemoryFormatUtils.stringToBytes("4G"),
+      severe = MemoryFormatUtils.stringToBytes("6G"), critical = MemoryFormatUtils.stringToBytes("8G"), ascending = true)
 
   class Evaluator(configurationHeuristic: ConfigurationHeuristic, data: SparkApplicationData) {
     lazy val appConfigurationProperties: Map[String, String] =
@@ -174,6 +194,11 @@ object ConfigurationHeuristic {
         Severity.NONE
       }
 
+    lazy val sparkYarnExecutorMemoryOverhead: String = if (getProperty(SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD).getOrElse("0").matches("(.*)[0-9]"))
+      MemoryFormatUtils.bytesToString(MemoryFormatUtils.stringToBytes(getProperty(SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD).getOrElse("0") + "MB")) else (getProperty(SPARK_YARN_EXECUTOR_MEMORY_OVERHEAD).getOrElse("0"))
+    lazy val sparkYarnDriverMemoryOverhead: String = if (getProperty(SPARK_YARN_DRIVER_MEMORY_OVERHEAD).getOrElse("0").matches("(.*)[0-9]"))
+      MemoryFormatUtils.bytesToString(MemoryFormatUtils.stringToBytes(getProperty(SPARK_YARN_DRIVER_MEMORY_OVERHEAD).getOrElse("0") + "MB")) else getProperty(SPARK_YARN_DRIVER_MEMORY_OVERHEAD).getOrElse("0")
+
     lazy val serializer: Option[String] = getProperty(SPARK_SERIALIZER_KEY)
 
     /**
@@ -188,7 +213,8 @@ object ConfigurationHeuristic {
 
     //The following thresholds are for checking if the memory and cores values (executor and driver) are above normal. These thresholds are experimental, and may change in the future.
     val DEFAULT_SPARK_MEMORY_THRESHOLDS =
-      SeverityThresholds(low = MemoryFormatUtils.stringToBytes("10G"), MemoryFormatUtils.stringToBytes("15G"), severe = MemoryFormatUtils.stringToBytes("20G"), critical = MemoryFormatUtils.stringToBytes("25G"), ascending = true)
+      SeverityThresholds(low = MemoryFormatUtils.stringToBytes("10G"), MemoryFormatUtils.stringToBytes("15G"),
+        severe = MemoryFormatUtils.stringToBytes("20G"), critical = MemoryFormatUtils.stringToBytes("25G"), ascending = true)
     val DEFAULT_SPARK_CORES_THRESHOLDS =
       SeverityThresholds(low = 4, moderate = 6, severe = 8, critical = 10, ascending = true)
 
@@ -206,9 +232,13 @@ object ConfigurationHeuristic {
     } else {
       Severity.NONE
     }
+    val severityExecutorMemoryOverhead = configurationHeuristic.sparkOverheadMemoryThreshold.severityOf(MemoryFormatUtils.stringToBytes(sparkYarnExecutorMemoryOverhead))
+    val severityDriverMemoryOverhead = configurationHeuristic.sparkOverheadMemoryThreshold.severityOf(MemoryFormatUtils.stringToBytes(sparkYarnDriverMemoryOverhead))
+
 
     //Severity for the configuration thresholds
-    val severityConfThresholds: Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory, severityMinExecutors, severityMaxExecutors, jarsSeverity)
+    val severityConfThresholds: Severity = Severity.max(severityDriverCores, severityDriverMemory, severityExecutorCores, severityExecutorMemory,
+      severityMinExecutors, severityMaxExecutors, jarsSeverity, severityExecutorMemoryOverhead, severityDriverMemoryOverhead)
 
     /**
       * The following logic computes severity based on shuffle service and dynamic allocation flags.
