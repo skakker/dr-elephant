@@ -195,9 +195,9 @@
   </heuristic>
   <heuristic>
     <applicationtype>spark</applicationtype>
-    <heuristicname>Spark GC Time to Run Time</heuristicname>
-    <classname>com.linkedin.drelephant.spark.heuristics.GcCpuTimeHeuristic</classname>
-    <viewname>views.html.help.spark.helpGcCpuTimeHeuristic</viewname>
+    <heuristicname>Executor GC</heuristicname>
+    <classname>com.linkedin.drelephant.spark.heuristics.ExecutorGcHeuristic</classname>
+    <viewname>views.html.help.spark.helpExecutorGcHeuristic</viewname>
   </heuristic>
 
 </heuristics>

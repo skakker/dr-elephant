@@ -27,10 +27,10 @@ import org.scalatest.{FunSpec, Matchers}
 import scala.concurrent.duration.Duration
 
 
-class GcCpuTimeHeuristicTest extends FunSpec with Matchers {
-  import GcCpuTimeHeuristicTest._
+class ExecutorGcHeuristicTest extends FunSpec with Matchers {
+  import ExecutorGcHeuristicTest._
 
-  describe("GcCpuTimeHeuristic") {
+  describe("ExecutorGcHeuristic") {
     val heuristicConfigurationData = newFakeHeuristicConfigurationData(
       Map(
         "max_to_median_ratio_severity_thresholds" -> "1.414,2,4,16",
@@ -38,7 +38,7 @@ class GcCpuTimeHeuristicTest extends FunSpec with Matchers {
         "ignore_max_millis_less_than_threshold" -> "4000001"
       )
     )
-    val gcCpuTimeHeuristic = new GcCpuTimeHeuristic(heuristicConfigurationData)
+    val executorGcHeuristic = new ExecutorGcHeuristic(heuristicConfigurationData)
 
     val executorSummaries = Seq(
       newFakeExecutorSummary(
@@ -65,7 +65,7 @@ class GcCpuTimeHeuristicTest extends FunSpec with Matchers {
 
     describe(".apply") {
       val data1 = newFakeSparkApplicationData(executorSummaries)
-      val heuristicResult = gcCpuTimeHeuristic.apply(data1)
+      val heuristicResult = executorGcHeuristic.apply(data1)
       val heuristicResultDetails = heuristicResult.getHeuristicResultDetails
 
       it("returns the severity") {
@@ -80,20 +80,20 @@ class GcCpuTimeHeuristicTest extends FunSpec with Matchers {
 
       it("returns the total GC time") {
         val details = heuristicResultDetails.get(1)
-        details.getName should include("GC total time")
+        details.getName should include("Total GC time")
         details.getValue should be("1200000")
       }
 
       it("returns the executor's run time") {
         val details = heuristicResultDetails.get(2)
-        details.getName should include("Executor Run time")
+        details.getName should include("Total Executor Runtime")
         details.getValue should be("4740000")
       }
     }
   }
 }
 
-object GcCpuTimeHeuristicTest {
+object ExecutorGcHeuristicTest {
   import JavaConverters._
 
   def newFakeHeuristicConfigurationData(params: Map[String, String] = Map.empty): HeuristicConfigurationData =

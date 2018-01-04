@@ -25,12 +25,12 @@ import com.linkedin.drelephant.spark.data.SparkApplicationData
 import scala.collection.JavaConverters
 
 /**
-  * A heuristic based on GC time and CPU run time
+  * A heuristic based on GC time and CPU run time. It calculates the ratio of the total time a job spends in GC to the total run time of a job and warns if too much time is spent in GC.
   */
-class GcCpuTimeHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
+class ExecutorGcHeuristic(private val heuristicConfigurationData: HeuristicConfigurationData)
   extends Heuristic[SparkApplicationData] {
 
-  import GcCpuTimeHeuristic._
+  import ExecutorGcHeuristic._
   import JavaConverters._
 
   val gcSeverityAThresholds: SeverityThresholds =
@@ -47,23 +47,23 @@ class GcCpuTimeHeuristic(private val heuristicConfigurationData: HeuristicConfig
     val evaluator = new Evaluator(this, data)
     var resultDetails = Seq(
       new HeuristicResultDetails("GC time to Executor Run time ratio", evaluator.ratio.toString),
-      new HeuristicResultDetails("GC total time", evaluator.jvmTime.toString),
-      new HeuristicResultDetails("Executor Run time", evaluator.executorRunTimeTotal.toString)
+      new HeuristicResultDetails("Total GC time", evaluator.jvmTime.toString),
+      new HeuristicResultDetails("Total Executor Runtime", evaluator.executorRunTimeTotal.toString)
     )
 
     //adding recommendations to the result, severityTimeA corresponds to the ascending severity calculation
     if (evaluator.severityTimeA.getValue > Severity.LOW.getValue) {
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The ratio of JVM GC Time and executor Time is above normal, we recommend to increase the executor memory")
+      resultDetails = resultDetails :+ new HeuristicResultDetails("Gc ratio high", "The job is spending too much time on GC. We recommend increasing the executor memory.")
     }
     //severityTimeD corresponds to the descending severity calculation
     if (evaluator.severityTimeD.getValue > Severity.LOW.getValue) {
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The ratio of JVM GC Time and executor Time is below normal, we recommend to decrease the executor memory")
+      resultDetails = resultDetails :+ new HeuristicResultDetails("Gc ratio low", "The job is spending too less time in GC. Please check if you have asked for more executor memory than required.")
     }
 
     val result = new HeuristicResult(
       heuristicConfigurationData.getClassName,
       heuristicConfigurationData.getHeuristicName,
-      evaluator.severity,
+      evaluator.severityTimeA,
       0,
       resultDetails.asJava
     )
@@ -71,7 +71,7 @@ class GcCpuTimeHeuristic(private val heuristicConfigurationData: HeuristicConfig
   }
 }
 
-object GcCpuTimeHeuristic {
+object ExecutorGcHeuristic {
   val SPARK_EXECUTOR_MEMORY = "spark.executor.memory"
   val SPARK_EXECUTOR_CORES = "spark.executor.cores"
 
@@ -88,17 +88,17 @@ object GcCpuTimeHeuristic {
   val GC_SEVERITY_A_THRESHOLDS_KEY: String = "gc_severity_A_threshold"
   val GC_SEVERITY_D_THRESHOLDS_KEY: String = "gc_severity_D_threshold"
 
-  class Evaluator(gcCpuTimeHeuristic: GcCpuTimeHeuristic, data: SparkApplicationData) {
-    lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
+  class Evaluator(executorGcHeuristic: ExecutorGcHeuristic, data: SparkApplicationData) {
+    lazy val executorAndDriverSummaries: Seq[ExecutorSummary] = data.executorSummaries
+    lazy val executorSummaries: Seq[ExecutorSummary] = executorAndDriverSummaries.filterNot(_.id.equals("driver"))
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
     var (jvmTime, executorRunTimeTotal) = getTimeValues(executorSummaries)
 
     var ratio: Double = jvmTime.toDouble / executorRunTimeTotal.toDouble
 
-    lazy val severityTimeA: Severity = gcCpuTimeHeuristic.gcSeverityAThresholds.severityOf(ratio)
-    lazy val severityTimeD: Severity = gcCpuTimeHeuristic.gcSeverityAThresholds.severityOf(ratio)
-    lazy val severity : Severity = Severity.max(severityTimeA, severityTimeD)
+    lazy val severityTimeA: Severity = executorGcHeuristic.gcSeverityAThresholds.severityOf(ratio)
+    lazy val severityTimeD: Severity = executorGcHeuristic.gcSeverityDThresholds.severityOf(ratio)
 
     /**
       * returns the total JVM GC Time and total executor Run Time across all stages
