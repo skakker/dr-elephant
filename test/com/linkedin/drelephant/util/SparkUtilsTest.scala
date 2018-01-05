@@ -25,10 +25,9 @@ import org.apache.hadoop.fs.{FSDataInputStream, FileStatus, FileSystem, Path, Pa
 import org.apache.hadoop.io.compress.CompressionInputStream
 import org.apache.log4j.Logger
 import org.apache.spark.SparkConf
-import org.apache.spark.io.{LZ4CompressionCodec, SnappyCompressionCodec}
+import org.apache.spark.io.LZ4CompressionCodec
 import org.mockito.BDDMockito
-import org.mockito.Matchers
-import org.scalatest.{FunSpec, Matchers, OptionValues}
+import org.scalatest.{FunSpec, OptionValues}
 import org.scalatest.mockito.MockitoSugar
 import org.xerial.snappy.SnappyOutputStream
 
@@ -203,7 +202,7 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
         val sparkUtils = SparkUtilsTest.newFakeSparkUtilsForEventLog(
           new URI("webhdfs://nn1.grid.example.com:50070"),
           new Path("/logs/spark"),
-          new Path("application_1_1.snappy"),
+          new Path("application_1_1.lz4"),
           Array.empty[Byte]
         )
 
@@ -212,8 +211,8 @@ class SparkUtilsTest extends FunSpec with org.scalatest.Matchers with OptionValu
         val (path, codec) =
           sparkUtils.pathAndCodecforEventLog(sparkConf: SparkConf, fs: FileSystem, basePath: Path, "application_1", None)
 
-        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.snappy"))
-        codec.value should be(a[SnappyCompressionCodec])
+        path should be(new Path("webhdfs://nn1.grid.example.com:50070/logs/spark/application_1_1.lz4"))
+        codec.value should be(a[LZ4CompressionCodec])
       }
     }
 
