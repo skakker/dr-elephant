@@ -1,3 +1,9 @@
+/*
+*Added this class to accommodate the status "PENDING" for stages.
+*
+*TODO: remove this class if using the spark version having "PENDING" StageStatus.
+ */
+
 package com.linkedin.drelephant.spark.fetchers.statusapiv1;
 
 import org.apache.spark.util.EnumUtil;
@@ -12,7 +18,7 @@ public enum StageStatus {
   private StageStatus() {
   }
 
-  public static com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus fromString(String str) {
-    return (com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus) EnumUtil.parseIgnoreCase(com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus.class, str);
+  public static StageStatus fromString(String str) {
+    return (StageStatus) EnumUtil.parseIgnoreCase(StageStatus.class, str);
   }
 }
