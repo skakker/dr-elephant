@@ -62,7 +62,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
   private AuthenticatedURL _authenticatedURL;
   private final ObjectMapper _objectMapper = new ObjectMapper();
 
-  private final Queue<AnalyticJob> _retryQueue = new ConcurrentLinkedQueue<AnalyticJob>();
+  private final Queue<AnalyticJob> _firstRetryQueue = new ConcurrentLinkedQueue<AnalyticJob>();
 
   private final ArrayList<AnalyticJob> _secondRetryQueue = new ArrayList<AnalyticJob>();
 
@@ -157,12 +157,11 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
     appList.addAll(failedApps);
 
     // Append promises from the retry queue at the end of the list
-    while (!_retryQueue.isEmpty()) {
-      appList.add(_retryQueue.poll());
+    while (!_firstRetryQueue.isEmpty()) {
+      appList.add(_firstRetryQueue.poll());
     }
 
     Iterator iteratorSecondRetry = _secondRetryQueue.iterator();
-
     while (iteratorSecondRetry.hasNext()) {
       AnalyticJob job = (AnalyticJob) iteratorSecondRetry.next();
       if(job.readyForSecondRetry()) {
@@ -177,8 +176,8 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
 
   @Override
   public void addIntoRetries(AnalyticJob promise) {
-    _retryQueue.add(promise);
-    int retryQueueSize = _retryQueue.size();
+    _firstRetryQueue.add(promise);
+    int retryQueueSize = _firstRetryQueue.size();
     MetricsController.setRetryQueueSize(retryQueueSize);
     logger.info("Retry queue size is " + retryQueueSize);
   }
