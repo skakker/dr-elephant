@@ -119,7 +119,7 @@ object ExecutorStorageSpillHeuristic {
 
     lazy val sparkExecutorMemory: Long = (appConfigurationProperties.get(SPARK_EXECUTOR_MEMORY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0)
     lazy val sparkExecutorCores: Int = (appConfigurationProperties.get(SPARK_EXECUTOR_CORES).map(_.toInt)).getOrElse(0)
-    lazy val sparkExecutorInstances: Int = (appConfigurationProperties.get(SPARK_EXECUTOR_INSTANCES).map(_.toInt)).getOrElse(0)
+    lazy val sparkExecutorInstances: Int = (appConfigurationProperties.get(SPARK_EXECUTOR_INSTANCES).map(_.toInt)).getOrElse(1)
   }
 }
 
