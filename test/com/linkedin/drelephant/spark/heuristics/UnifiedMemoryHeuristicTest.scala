@@ -61,6 +61,7 @@ object UnifiedMemoryHeuristicTest {
     totalShuffleRead = 0,
     totalShuffleWrite = 0,
     maxMemory,
+    totalGCTime = 0,
     executorLogs = Map.empty,
     peakUnifiedMemory
   )
