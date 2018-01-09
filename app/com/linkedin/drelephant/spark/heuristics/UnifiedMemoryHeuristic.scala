@@ -38,17 +38,20 @@ class UnifiedMemoryHeuristic(private val heuristicConfigurationData: HeuristicCo
 
   override def getHeuristicConfData(): HeuristicConfigurationData = heuristicConfigurationData
 
+  val peakUnifiedMemoryThresholdString: String =
+    if(heuristicConfigurationData.getParamMap.get() == null) DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLD_STRING
+    else heuristicConfigurationData.getParamMap.get(PEAK_UNIFIED_MEMORY_THRESHOLD_KEY)
+
   override def apply(data: SparkApplicationData): HeuristicResult = {
     val evaluator = new Evaluator(this, data)
 
     var resultDetails = Seq(
-      new HeuristicResultDetails("Allocated memory for the unified region", MemoryFormatUtils.bytesToString(evaluator.maxMemory)),
-      new HeuristicResultDetails("Mean peak unified memory", MemoryFormatUtils.bytesToString(evaluator.meanUnifiedMemory))
+      new HeuristicResultDetails("Unified Memory Space Allocated", MemoryFormatUtils.bytesToString(evaluator.maxMemory)),
+      new HeuristicResultDetails("Mean peak unified memory", MemoryFormatUtils.bytesToString(evaluator.meanUnifiedMemory)),
+      new HeuristicResultDetails("spark.executor.memory", MemoryFormatUtils.bytesToString(evaluator.sparkExecutorMemory)),
+      new HeuristicResultDetails("spark.memory.fraction", evaluator.sparkMemoryFraction.toString)
     )
 
-    if (evaluator.severity.getValue > Severity.LOW.getValue) {
-      resultDetails = resultDetails :+ new HeuristicResultDetails("Note", "The value of peak unified memory is very low, we recommend to decrease spark.memory.fraction, or total executor memory")
-    }
     val result = new HeuristicResult(
       heuristicConfigurationData.getClassName,
       heuristicConfigurationData.getHeuristicName,
@@ -64,24 +67,41 @@ object UnifiedMemoryHeuristic {
 
   val EXECUTION_MEMORY = "executionMemory"
   val STORAGE_MEMORY = "storageMemory"
+  val SPARK_EXECUTOR_MEMORY_KEY = "spark.executor.memory"
+  val SPARK_MEMORY_FRACTION_KEY = "spark.memory.fraction"
+  val PEAK_UNIFIED_MEMORY_THRESHOLD_KEY = "peak_unified_memory_threshold"
+  val DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLD_STRING = "0.7,0.6,0.4,0.2"
 
-  class Evaluator(memoryFractionHeuristic: UnifiedMemoryHeuristic, data: SparkApplicationData) {
+  class Evaluator(unifiedMemoryHeuristic: UnifiedMemoryHeuristic, data: SparkApplicationData) {
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
 
     lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
+    if(executorSummaries == null) {
+      throw new Exception ("Executors Summary is null.")
+    }
+
     val executorList: Seq[ExecutorSummary] = executorSummaries.filterNot(_.id.equals("driver"))
+    if(executorList.isEmpty) {
+      throw new Exception ("No executor information available.")
+    }
 
     //allocated memory for the unified region
     val maxMemory: Long = executorList.head.maxMemory
 
-    val DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS =
-      SeverityThresholds(low = 0.7 * maxMemory, moderate = 0.6 * maxMemory, severe = 0.4 * maxMemory, critical = 0.2 * maxMemory, ascending = false)
+    val PEAK_UNIFIED_MEMORY_THRESHOLD_LIST_STRING : String = unifiedMemoryHeuristic.peakUnifiedMemoryThresholdString.split(",").map(_.toDouble * maxMemory).toString
+
+    val PEAK_UNIFIED_MEMORY_THRESHOLDS : SeverityThresholds =
+      SeverityThresholds.parse(PEAK_UNIFIED_MEMORY_THRESHOLD_LIST_STRING, ascending = false).getOrElse(SeverityThresholds(low = 0.7 * maxMemory, moderate = 0.6 * maxMemory, severe = 0.4 * maxMemory, critical = 0.2 * maxMemory, ascending = false))
 
     def getPeakUnifiedMemoryExecutorSeverity(executorSummary: ExecutorSummary): Severity = {
-      return DEFAULT_PEAK_UNIFIED_MEMORY_THRESHOLDS.severityOf(executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
+      return PEAK_UNIFIED_MEMORY_THRESHOLDS.severityOf(executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
         + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue)
     }
+
+    val sparkExecutorMemory : Long = (appConfigurationProperties.get(SPARK_EXECUTOR_MEMORY_KEY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0L)
+
+    val sparkMemoryFraction : Long = (appConfigurationProperties.get(SPARK_MEMORY_FRACTION_KEY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0L)
 
     lazy val meanUnifiedMemory: Long = (executorList.map {
       executorSummary => {
