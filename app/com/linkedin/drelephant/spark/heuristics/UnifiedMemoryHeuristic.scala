@@ -48,6 +48,7 @@ class UnifiedMemoryHeuristic(private val heuristicConfigurationData: HeuristicCo
     var resultDetails = Seq(
       new HeuristicResultDetails("Unified Memory Space Allocated", MemoryFormatUtils.bytesToString(evaluator.maxMemory)),
       new HeuristicResultDetails("Mean peak unified memory", MemoryFormatUtils.bytesToString(evaluator.meanUnifiedMemory)),
+      new HeuristicResultDetails("Max peak unified memory", MemoryFormatUtils.bytesToString(evaluator.maxUnifiedMemory)),
       new HeuristicResultDetails("spark.executor.memory", MemoryFormatUtils.bytesToString(evaluator.sparkExecutorMemory)),
       new HeuristicResultDetails("spark.memory.fraction", evaluator.sparkMemoryFraction.toString)
     )
@@ -101,7 +102,7 @@ object UnifiedMemoryHeuristic {
 
     val sparkExecutorMemory : Long = (appConfigurationProperties.get(SPARK_EXECUTOR_MEMORY_KEY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0L)
 
-    val sparkMemoryFraction : Long = (appConfigurationProperties.get(SPARK_MEMORY_FRACTION_KEY).map(MemoryFormatUtils.stringToBytes)).getOrElse(0L)
+    val sparkMemoryFraction : Double = appConfigurationProperties.getOrElse(SPARK_MEMORY_FRACTION_KEY, 0.6D).asInstanceOf[Number].doubleValue
 
     lazy val meanUnifiedMemory: Long = (executorList.map {
       executorSummary => {
@@ -109,6 +110,13 @@ object UnifiedMemoryHeuristic {
         + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue
       }
     }.sum) / executorList.size
+
+    lazy val maxUnifiedMemory: Long = executorList.map {
+      executorSummary => {
+        executorSummary.peakUnifiedMemory.getOrElse(EXECUTION_MEMORY, 0).asInstanceOf[Number].longValue
+        + executorSummary.peakUnifiedMemory.getOrElse(STORAGE_MEMORY, 0).asInstanceOf[Number].longValue
+      }
+    }.max
 
     lazy val severity: Severity = {
       var severityPeakUnifiedMemoryVariable: Severity = Severity.NONE
