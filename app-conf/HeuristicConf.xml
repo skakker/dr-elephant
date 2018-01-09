@@ -195,7 +195,7 @@
   </heuristic>
   <heuristic>
     <applicationtype>spark</applicationtype>
-    <heuristicname>Spark Stages with failed tasks</heuristicname>
+    <heuristicname>Stages with failed tasks</heuristicname>
     <classname>com.linkedin.drelephant.spark.heuristics.StagesWithFailedTasksHeuristic</classname>
     <viewname>views.html.help.spark.helpStagesWithFailedTasks</viewname>
   </heuristic>

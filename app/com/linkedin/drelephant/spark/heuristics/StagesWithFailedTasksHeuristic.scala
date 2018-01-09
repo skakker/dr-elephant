@@ -62,7 +62,7 @@ object StagesWithFailedTasksHeuristic {
 
   val OOM_ERROR = "java.lang.OutOfMemoryError"
   val OVERHEAD_MEMORY_ERROR = "killed by YARN for exceeding memory limits"
-  val ratioThreshold : Double = 2
+  val ratioThreshold: Double = 2
 
   class Evaluator(memoryFractionHeuristic: StagesWithFailedTasksHeuristic, data: SparkApplicationData) {
     lazy val stagesWithFailedTasks: Seq[StageData] = data.stagesWithFailedTasks
@@ -99,23 +99,27 @@ object StagesWithFailedTasksHeuristic {
     /**
       * returns the max (severity of this stage, present severity)
       *
+      * note : this method is called for all the stages, in turn updating the value of max stage severity if required.
+      *
       * @param numFailedTasks
       * @param stageStatus
-      * @param severityStage
+      * @param severityStage : max severity of all the stages we have encountered till now.
       * @param numCompleteTasks
       * @return
       */
     private def getStageSeverity(numFailedTasks: Int, stageStatus: StageStatus, severityStage: Severity, numCompleteTasks: Int): Severity = {
       var severityTemp: Severity = Severity.NONE
+      if(numCompleteTasks == 0) {
+        return severityStage
+      }
+
       if (numFailedTasks != 0 && stageStatus != StageStatus.FAILED) {
         if (numFailedTasks.toDouble / numCompleteTasks.toDouble < ratioThreshold / 100.toDouble) {
           severityTemp = Severity.MODERATE
-        }
-        else {
+        } else {
           severityTemp = Severity.SEVERE
         }
-      }
-      else if (numFailedTasks != 0 && stageStatus == StageStatus.FAILED && numFailedTasks / numCompleteTasks > 0) {
+      } else if (numFailedTasks != 0 && stageStatus == StageStatus.FAILED && numFailedTasks / numCompleteTasks > 0) {
         severityTemp = Severity.CRITICAL
       }
       return Severity.max(severityTemp, severityStage)
@@ -125,8 +129,8 @@ object StagesWithFailedTasksHeuristic {
       * checks whether the error message contains the corresponding error
       *
       * @param errorMessage : the entire error message
-      * @param whichError : the error we want to search the error message with
-      * @param noTasks : number of tasks having that error
+      * @param whichError   : the error we want to search the error message with
+      * @param noTasks      : number of tasks having that error
       * @return : returning the number of tasks having the error.
       */
     private def hasError(errorMessage: String, whichError: String, noTasks: Int): Int = {

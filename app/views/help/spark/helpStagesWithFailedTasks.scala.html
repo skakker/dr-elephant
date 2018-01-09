@@ -15,4 +15,8 @@
 *@
 <p>Tasks (and stages and jobs) can fail if an error occurs while the task is executing.</p>
 
-<p>Tasks may fail due to Overhead memory issues or OOM errors. Due to errors in tasks, that stage might also fail. It is analysed as to why the tasks failed, if many tasks of the same stage failed due to the same error, etc. Suggestions are given to prevent these errors.</p>
+<p>In Spark, each stage is divided into tasks which run individually. Now a task may fail due to more than one reasons. Out of memory and overhead memory issues are the most common reasons. </p>
+<p>Due to errors in tasks, their corresponding stages might also fail. The reasons for tasks failure are analysed and suggestions are given.</p>
+<h3>Suggestions</h3>
+<p>Failed due to Overhead Memory issues: Please try increasing spark.yarn.executor.memoryOverhead by 500MB in spark.yarn.executor.memoryOverhead.</p>
+<p>Failed due to OOM: Try increasing spark.executor.memory or decreasing spark.memory.fraction (take a look at unified memory heuristic) or decreasing number of cores.</p>

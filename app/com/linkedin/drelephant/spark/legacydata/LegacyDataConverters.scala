@@ -34,7 +34,7 @@ import com.linkedin.drelephant.spark.fetchers.statusapiv1.StageStatus
 object LegacyDataConverters {
   import JavaConverters._
 
-  //Currently returns a default object (as this JSON is retrieved from Spark History Server), if spark history server is not used to fetch data, changes are required
+  //Returns a default object. This default object is returned if logs are processed locally i.e. in case FS fetcher is being used.
   def extractStagesWithFailedTasks(legacyData: SparkApplicationData): scala.Seq[StageData] = {
     Seq(new StageData {
       override def numCompleteTasks: Int = 0
