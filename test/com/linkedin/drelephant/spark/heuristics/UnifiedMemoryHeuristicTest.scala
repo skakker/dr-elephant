@@ -62,7 +62,9 @@ object UnifiedMemoryHeuristicTest {
     totalShuffleWrite = 0,
     maxMemory,
     totalGCTime = 0,
+    totalMemoryBytesSpilled = 0,
     executorLogs = Map.empty,
+    peakJvmUsedMemory = Map.empty,
     peakUnifiedMemory
   )
 
@@ -72,7 +74,8 @@ object UnifiedMemoryHeuristicTest {
       new ApplicationInfoImpl(appId, name = "app", Seq.empty),
       jobDatas = Seq.empty,
       stageDatas = Seq.empty,
-      executorSummaries = executorSummaries
+      executorSummaries = executorSummaries,
+      stagesWithFailedTasks = Seq.empty
     )
 
     SparkApplicationData(appId, restDerivedData, logDerivedData = None)
