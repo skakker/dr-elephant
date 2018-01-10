@@ -193,7 +193,7 @@ object SparkMetricsAggregatorTest {
     totalGCTime = 0,
     totalMemoryBytesSpilled = 0,
     executorLogs = Map.empty,
-    peakJvmUsedMemory = Map.empty,
+    peakJvmUsedMemory,
     peakUnifiedMemory = Map.empty
   )
 }
