@@ -16,7 +16,7 @@
 
 package com.linkedin.drelephant.spark.fetchers
 
-import java.io.{InputStream, BufferedInputStream}
+import java.io.{BufferedInputStream, InputStream}
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.zip.ZipInputStream
@@ -73,7 +73,7 @@ class SparkRestClient(sparkConf: SparkConf) {
 
   private val apiTarget: WebTarget = client.target(historyServerUri).path(API_V1_MOUNT_PATH)
 
-  def fetchData(appId: String, fetchLogs: Boolean = false)(
+  def fetchData(appId: String, fetchLogs: Boolean = false, fetchFailedTasks: Boolean = true)(
     implicit ec: ExecutionContext
   ): Future[SparkRestDerivedData] = {
     val (applicationInfo, attemptTarget) = getApplicationMetaData(appId)
@@ -87,13 +87,25 @@ class SparkRestClient(sparkConf: SparkConf) {
         async { getLogData(attemptTarget)}
       } else Future.successful(None)
 
-      SparkRestDerivedData(
-        applicationInfo,
-        await(futureJobDatas),
-        await(futureStageDatas),
-        await(futureExecutorSummaries),
-        await(futureLogData)
-      )
+      if(fetchFailedTasks) {
+        val futureFailedTasksDatas = async { getStagesWithFailedTasks(attemptTarget) }
+        SparkRestDerivedData(
+          applicationInfo,
+          await(futureJobDatas),
+          await(futureStageDatas),
+          await(futureExecutorSummaries),
+          await(futureFailedTasksDatas),
+          await(futureLogData))
+      } else {
+        SparkRestDerivedData(
+          applicationInfo,
+          await(futureJobDatas),
+          await(futureStageDatas),
+          await(futureExecutorSummaries),
+          Seq.empty,
+          await(futureLogData)
+        )
+      }
     }
   }
 
@@ -209,6 +221,18 @@ class SparkRestClient(sparkConf: SparkConf) {
     } catch {
       case NonFatal(e) => {
         logger.error(s"error reading executorSummary ${target.getUri}", e)
+        throw e
+      }
+    }
+  }
+
+  private def getStagesWithFailedTasks(attemptTarget: WebTarget): Seq[StageDataImpl] = {
+    val target = attemptTarget.path("stages/failedTasks")
+    try {
+      get(target, SparkRestObjectMapper.readValue[Seq[StageDataImpl]])
+    } catch {
+      case NonFatal(e) => {
+        logger.error(s"error reading failedTasks ${target.getUri}", e)
         throw e
       }
     }

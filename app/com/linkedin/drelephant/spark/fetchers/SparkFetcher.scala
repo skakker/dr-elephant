@@ -112,7 +112,8 @@ class SparkFetcher(fetcherConfigurationData: FetcherConfigurationData)
 
   private def doFetchDataUsingRestAndLogClients(analyticJob: AnalyticJob): Future[SparkApplicationData] = async {
     val appId = analyticJob.getAppId
-    val restDerivedData = await(sparkRestClient.fetchData(appId, eventLogSource == EventLogSource.Rest))
+    val doFetchFailedTasks : Boolean = Option(fetcherConfigurationData.getParamMap.get(FETCH_FAILED_TASKS)).getOrElse("false").toBoolean
+    val restDerivedData = await(sparkRestClient.fetchData(appId, eventLogSource == EventLogSource.Rest, doFetchFailedTasks))
 
     val logDerivedData = eventLogSource match {
       case EventLogSource.None => None
@@ -143,4 +144,5 @@ object SparkFetcher {
   val SPARK_EVENT_LOG_ENABLED_KEY = "spark.eventLog.enabled"
   val DEFAULT_TIMEOUT = Duration(5, SECONDS)
   val LOG_LOCATION_URI_XML_FIELD = "event_log_location_uri"
+  val FETCH_FAILED_TASKS = "fetch_failed_tasks"
 }
