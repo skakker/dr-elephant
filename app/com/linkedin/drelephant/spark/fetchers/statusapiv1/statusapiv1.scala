@@ -161,7 +161,7 @@ trait StageData{
   def schedulingPool: String
 
   def accumulatorUpdates: Seq[AccumulableInfo]
-  def tasks: Option[Map[Long, TaskData]]
+  def tasks: Option[Map[Long, TaskDataImpl]]
   def executorSummary: Option[Map[String, ExecutorStageSummary]]}
 
 trait TaskData{
@@ -368,7 +368,7 @@ class StageDataImpl(
   var schedulingPool: String,
 
   var accumulatorUpdates: Seq[AccumulableInfoImpl],
-  var tasks: Option[Map[Long, TaskData]],
+  var tasks: Option[Map[Long, TaskDataImpl]],
   var executorSummary: Option[Map[String, ExecutorStageSummaryImpl]]) extends StageData
 
 class TaskDataImpl(

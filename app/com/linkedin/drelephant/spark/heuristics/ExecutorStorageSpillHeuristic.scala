@@ -44,6 +44,13 @@ class ExecutorStorageSpillHeuristic(private val heuristicConfigurationData: Heur
     if(heuristicConfigurationData.getParamMap.get(SPILL_MAX_MEMORY_THRESHOLD_KEY) == null) DEFAULT_SPILL_MAX_MEMORY_THRESHOLD
     else heuristicConfigurationData.getParamMap.get(SPILL_MAX_MEMORY_THRESHOLD_KEY).toDouble
 
+  val sparkExecutorCoresThreshold : Int =
+    if(heuristicConfigurationData.getParamMap.get(SPARK_EXECUTOR_CORES_THRESHOLD_KEY) == null) DEFAULT_SPARK_EXECUTOR_CORES_THRESHOLD
+    else heuristicConfigurationData.getParamMap.get(SPARK_EXECUTOR_CORES_THRESHOLD_KEY).toInt
+
+  val sparkExecutorMemoryThreshold : String =
+    if(heuristicConfigurationData.getParamMap.get(SPARK_EXECUTOR_MEMORY_THRESHOLD_KEY) == null) DEFAULT_SPARK_EXECUTOR_MEMORY_THRESHOLD
+    else heuristicConfigurationData.getParamMap.get(SPARK_EXECUTOR_MEMORY_THRESHOLD_KEY)
 
   override def getHeuristicConfData(): HeuristicConfigurationData = heuristicConfigurationData
 
@@ -58,9 +65,9 @@ class ExecutorStorageSpillHeuristic(private val heuristicConfigurationData: Heur
 
     if(evaluator.severity != Severity.NONE){
       resultDetails :+ new HeuristicResultDetails("Note", "Your execution memory is being spilled. Kindly look into it.")
-      if(evaluator.sparkExecutorCores >=4 && evaluator.sparkExecutorMemory >= MemoryFormatUtils.stringToBytes("10GB")) {
+      if(evaluator.sparkExecutorCores >= sparkExecutorCoresThreshold && evaluator.sparkExecutorMemory >= MemoryFormatUtils.stringToBytes(sparkExecutorMemoryThreshold)) {
         resultDetails :+ new HeuristicResultDetails("Recommendation", "You can try decreasing the number of cores to reduce the number of concurrently running tasks.")
-      } else if (evaluator.sparkExecutorMemory >= MemoryFormatUtils.stringToBytes("10GB")) {
+      } else if (evaluator.sparkExecutorMemory <= MemoryFormatUtils.stringToBytes(sparkExecutorMemoryThreshold)) {
         resultDetails :+ new HeuristicResultDetails("Recommendation", "You can try increasing the executor memory to reduce spill.")
       }
     }
@@ -81,14 +88,17 @@ object ExecutorStorageSpillHeuristic {
   val SPARK_EXECUTOR_CORES = "spark.executor.cores"
   val SPILL_FRACTION_OF_EXECUTORS_THRESHOLD_KEY = "spill_fraction_of_executors_threshold"
   val SPILL_MAX_MEMORY_THRESHOLD_KEY = "spill_max_memory_threshold"
+  val SPARK_EXECUTOR_CORES_THRESHOLD_KEY = "spark_executor_cores_threshold"
+  val SPARK_EXECUTOR_MEMORY_THRESHOLD_KEY = "spark_executor_memory_threshold"
   val DEFAULT_SPILL_FRACTION_OF_EXECUTORS_THRESHOLD : Double = 0.2
   val DEFAULT_SPILL_MAX_MEMORY_THRESHOLD : Double = 0.05
+  val DEFAULT_SPARK_EXECUTOR_CORES_THRESHOLD : Int = 4
+  val DEFAULT_SPARK_EXECUTOR_MEMORY_THRESHOLD : String  ="10GB"
 
   class Evaluator(executorStorageSpillHeuristic: ExecutorStorageSpillHeuristic, data: SparkApplicationData) {
     lazy val executorSummaries: Seq[ExecutorSummary] = data.executorSummaries
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
-    val memoryPerCore: Long = (sparkExecutorMemory / sparkExecutorCores)
     val maxMemorySpilled: Long = executorSummaries.map(_.totalMemoryBytesSpilled).max
     val meanMemorySpilled = executorSummaries.map(_.totalMemoryBytesSpilled).sum / executorSummaries.size
     val totalMemorySpilled = executorSummaries.map(_.totalMemoryBytesSpilled).sum
@@ -96,20 +106,20 @@ object ExecutorStorageSpillHeuristic {
     val severity: Severity = {
       if (fractionOfExecutorsHavingBytesSpilled != 0) {
         if (fractionOfExecutorsHavingBytesSpilled < executorStorageSpillHeuristic.spillFractionOfExecutorsThreshold
-          && maxMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * memoryPerCore) {
+          && maxMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * sparkExecutorMemory) {
           Severity.LOW
         }
         else if (fractionOfExecutorsHavingBytesSpilled < executorStorageSpillHeuristic.spillFractionOfExecutorsThreshold
-          && meanMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * memoryPerCore) {
+          && meanMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * sparkExecutorMemory) {
           Severity.MODERATE
         }
 
         else if (fractionOfExecutorsHavingBytesSpilled >= executorStorageSpillHeuristic.spillFractionOfExecutorsThreshold
-          && meanMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * memoryPerCore) {
+          && meanMemorySpilled < executorStorageSpillHeuristic.spillMaxMemoryThreshold * sparkExecutorMemory) {
           Severity.SEVERE
         }
         else if (fractionOfExecutorsHavingBytesSpilled >= executorStorageSpillHeuristic.spillFractionOfExecutorsThreshold
-          && meanMemorySpilled >= executorStorageSpillHeuristic.spillMaxMemoryThreshold * memoryPerCore) {
+          && meanMemorySpilled >= executorStorageSpillHeuristic.spillMaxMemoryThreshold * sparkExecutorMemory) {
           Severity.CRITICAL
         } else Severity.NONE
       }

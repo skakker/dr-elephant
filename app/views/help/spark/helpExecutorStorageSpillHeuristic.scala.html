@@ -13,8 +13,11 @@
 * License for the specific language governing permissions and limitations under
 * the License.
 *@
-<p>Spark performs best when data is kept in memory. Spilled execution memory is tracked by memoryBytesSpilled, which is available at the task level, and each stage will have this information for its tasks. memoryBytesSpilled is cumulative for a task -- it is incremented whenever more execution memory is spilled. If execution memory is being spilled, then the warnings are as follows:</p>
-<p>Low: memoryBytesSpilled is  non-zero for 1 or more executors, greater than zero for < 20% of executors, and max size is < .05 * spark.executor.memory / spark.executor.instances.</p>
-<p>Moderate: memoryBytesSpilled is  non-zero for 1 or more executors, greater than zero for < 20% of executors, and avg size is < .05 * spark.executor.memory / spark.executor.instances.</p>
-<p>Severe: memoryBytes Spilled is greater than zero for > 20% of executors and avg size is < .05 spark.executor memory / spark.executor.instances.</p>
-<p>Critical: memoryBytes Spilled is greater than zero for > 20% of executors and/or avg size is >= .05 spark.executor memory / spark.executor.instances.</p>
+<p>Spark performs best when data is kept in memory. Spilled execution memory is tracked by memoryBytesSpilled, which is available executor level. If execution memory is being spilled, then the warnings are as follows:</p>
+<p>Low: memoryBytesSpilled is  non-zero for 1 or more executors, greater than zero for < 20% of executors, and max size is < .05 * <i>spark.executor.memory</i>.</p>
+<p>Moderate: memoryBytesSpilled is  non-zero for 1 or more executors, greater than zero for < 20% of executors, and avg size is < .05 * <i>spark.executor.memory</i>.</p>
+<p>Severe: memoryBytes Spilled is greater than zero for > 20% of executors and avg size is < .05 * <i>spark.executor.memory</i>.</p>
+<p>Critical: memoryBytes Spilled is greater than zero for > 20% of executors and/or avg size is >= .05 * <i>spark.executor.memory</i>.</p>
+<h3>Suggestions</h3>
+<p>If number of cores (spark.executor.cores) is more than 4 and executor memory is > 10GB : Try decreasing the number of cores which would decrese the number of tasks running in parallel, hence decreasing the number of bytes spilled.</p>
+<p>You can also try increasing the <i>spark.executor.memory</i> which will reduce memory spilled.</p>
