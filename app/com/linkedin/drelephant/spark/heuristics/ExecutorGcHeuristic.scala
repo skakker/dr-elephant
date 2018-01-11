@@ -90,7 +90,15 @@ object ExecutorGcHeuristic {
 
   class Evaluator(executorGcHeuristic: ExecutorGcHeuristic, data: SparkApplicationData) {
     lazy val executorAndDriverSummaries: Seq[ExecutorSummary] = data.executorSummaries
+    if (executorAndDriverSummaries == null) {
+      throw new Exception("Executors Summary is null.")
+    }
+
     lazy val executorSummaries: Seq[ExecutorSummary] = executorAndDriverSummaries.filterNot(_.id.equals("driver"))
+    if (executorSummaries.isEmpty) {
+      throw new Exception("No executor information available.")
+    }
+    
     lazy val appConfigurationProperties: Map[String, String] =
       data.appConfigurationProperties
     var (jvmTime, executorRunTimeTotal) = getTimeValues(executorSummaries)
