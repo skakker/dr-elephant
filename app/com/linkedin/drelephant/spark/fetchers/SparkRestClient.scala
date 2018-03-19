@@ -105,13 +105,29 @@ class SparkRestClient(sparkConf: SparkConf) {
           }
         } else Future.successful(None)
 
-        SparkRestDerivedData(
-          applicationInfo,
-          Await.result(futureJobDatas, DEFAULT_TIMEOUT),
-          Await.result(futureStageDatas, DEFAULT_TIMEOUT),
-          Await.result(futureExecutorSummaries, Duration(5, SECONDS)),
-          Await.result(futureLogData, Duration(5, SECONDS))
-        )
+        if (fetchFailedTasks) {
+          val futureFailedTasksDatas = Future {
+            blocking {
+              getStagesWithFailedTasks(attemptTarget)
+            }
+          }
+          SparkRestDerivedData(
+            applicationInfo,
+            Await.result(futureJobDatas, DEFAULT_TIMEOUT),
+            Await.result(futureStageDatas, DEFAULT_TIMEOUT),
+            Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
+            Await.result(futureFailedTasksDatas, DEFAULT_TIMEOUT),
+            Await.result(futureLogData, DEFAULT_TIMEOUT))
+        } else {
+          SparkRestDerivedData(
+            applicationInfo,
+            Await.result(futureJobDatas, DEFAULT_TIMEOUT),
+            Await.result(futureStageDatas, DEFAULT_TIMEOUT),
+            Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
+            Seq.empty,
+            Await.result(futureLogData, DEFAULT_TIMEOUT)
+          )
+        }
       }
     }
   }
@@ -140,6 +156,8 @@ class SparkRestClient(sparkConf: SparkConf) {
 
     val applicationInfo = getApplicationInfo(appTarget)
 
+    // These are pure and cannot fail, therefore it is safe to have
+    // them outside of the async block.
     val lastAttemptId = applicationInfo.attempts.maxBy {
       _.startTime
     }.attemptId
