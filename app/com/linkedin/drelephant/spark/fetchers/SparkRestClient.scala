@@ -155,7 +155,8 @@ class SparkRestClient(sparkConf: SparkConf) {
       get(appTarget, SparkRestObjectMapper.readValue[ApplicationInfoImpl])
     } catch {
       case NonFatal(e) => {
-        logger.error(s"error reading applicationInfo ${appTarget.getUri}", e)
+        logger.error(s"error reading applicationInfo ${appTarget.getUri}. Exception Message = " + e.getMessage)
+        logger.debug(e)
         throw e
       }
     }
@@ -179,7 +180,8 @@ class SparkRestClient(sparkConf: SparkConf) {
       new ZipInputStream(new BufferedInputStream(is))
     } catch {
       case NonFatal(e) => {
-        logger.error(s"error reading logs ${logTarget.getUri}", e)
+        logger.error(s"error reading logs ${logTarget.getUri}. Exception Message = " + e.getMessage)
+        logger.debug(e)
         throw e
       }
     }
@@ -212,7 +214,8 @@ class SparkRestClient(sparkConf: SparkConf) {
       get(target, SparkRestObjectMapper.readValue[Seq[JobDataImpl]])
     } catch {
       case NonFatal(e) => {
-        logger.error(s"error reading jobData ${target.getUri}", e)
+        logger.error(s"error reading jobData ${target.getUri}. Exception Message = " + e.getMessage)
+        logger.debug(e)
         throw e
       }
     }
@@ -224,7 +227,8 @@ class SparkRestClient(sparkConf: SparkConf) {
       get(target, SparkRestObjectMapper.readValue[Seq[StageDataImpl]])
     } catch {
       case NonFatal(e) => {
-        logger.error(s"error reading stageData ${target.getUri}", e)
+        logger.warn(s"error reading stageData ${target.getUri}. Exception Message = " + e.getMessage)
+        logger.debug(e)
         throw e
       }
     }
@@ -236,7 +240,8 @@ class SparkRestClient(sparkConf: SparkConf) {
       get(target, SparkRestObjectMapper.readValue[Seq[ExecutorSummaryImpl]])
     } catch {
       case NonFatal(e) => {
-        logger.error(s"error reading executorSummary ${target.getUri}", e)
+        logger.error(s"error reading executorSummary ${target.getUri}. Exception Message = " + e.getMessage)
+        logger.debug(e)
         throw e
       }
     }
