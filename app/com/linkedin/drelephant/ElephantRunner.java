@@ -186,7 +186,7 @@ public class ElephantRunner implements Runnable {
 
         Thread.currentThread().interrupt();
       } catch (TimeoutException e){
-        logger.warn("Timed out while fetching data.");
+        logger.warn("Timed out while fetching data. Exception message is: " + e.getMessage());
         jobFate();
       }catch (Exception e) {
         logger.error(e.getMessage());
