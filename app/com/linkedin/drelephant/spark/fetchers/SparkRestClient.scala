@@ -25,7 +25,7 @@ import java.util.{Calendar, SimpleTimeZone}
 import com.linkedin.drelephant.spark.legacydata.LegacyDataConverters
 import org.apache.spark.deploy.history.SparkDataCollection
 
-import scala.concurrent.{Await, ExecutionContext, Future, blocking}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.control.NonFatal
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
@@ -81,53 +81,40 @@ class SparkRestClient(sparkConf: SparkConf) {
     val (applicationInfo, attemptTarget) = getApplicationMetaData(appId)
 
     Future {
-      blocking {
-        val futureJobDatas = Future {
-          blocking {
-            getJobDatas(attemptTarget)
-          }
+      val futureJobDatas = Future {
+        getJobDatas(attemptTarget)
+      }
+      val futureStageDatas = Future {
+        getStageDatas(attemptTarget)
+      }
+      val futureExecutorSummaries = Future {
+        getExecutorSummaries(attemptTarget)
+      }
+      val futureLogData = if (fetchLogs) {
+        Future {
+          getLogData(attemptTarget)
         }
-        val futureStageDatas = Future {
-          blocking {
-            getStageDatas(attemptTarget)
-          }
+      } else Future.successful(None)
+      if (fetchFailedTasks) {
+        val futureFailedTasksDatas = Future {
+          getStagesWithFailedTasks(attemptTarget)
         }
-        val futureExecutorSummaries = Future {
-          blocking {
-            getExecutorSummaries(attemptTarget)
-          }
-        }
-        val futureLogData = if (fetchLogs) {
-          Future {
-            blocking {
-              getLogData(attemptTarget)
-            }
-          }
-        } else Future.successful(None)
-
-        if (fetchFailedTasks) {
-          val futureFailedTasksDatas = Future {
-            blocking {
-              getStagesWithFailedTasks(attemptTarget)
-            }
-          }
-          SparkRestDerivedData(
-            applicationInfo,
-            Await.result(futureJobDatas, DEFAULT_TIMEOUT),
-            Await.result(futureStageDatas, DEFAULT_TIMEOUT),
-            Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
-            Await.result(futureFailedTasksDatas, DEFAULT_TIMEOUT),
-            Await.result(futureLogData, DEFAULT_TIMEOUT))
-        } else {
-          SparkRestDerivedData(
-            applicationInfo,
-            Await.result(futureJobDatas, DEFAULT_TIMEOUT),
-            Await.result(futureStageDatas, DEFAULT_TIMEOUT),
-            Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
-            Seq.empty,
-            Await.result(futureLogData, DEFAULT_TIMEOUT)
-          )
-        }
+        SparkRestDerivedData(
+          applicationInfo,
+          Await.result(futureJobDatas, DEFAULT_TIMEOUT),
+          Await.result(futureStageDatas, DEFAULT_TIMEOUT),
+          Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
+          Await.result(futureFailedTasksDatas, DEFAULT_TIMEOUT),
+          Await.result(futureLogData, DEFAULT_TIMEOUT))
+      } else {
+        SparkRestDerivedData(
+          applicationInfo,
+          Await.result(futureJobDatas, DEFAULT_TIMEOUT),
+          Await.result(futureStageDatas, DEFAULT_TIMEOUT),
+          Await.result(futureExecutorSummaries, DEFAULT_TIMEOUT),
+          Seq.empty,
+          Await.result(futureLogData, DEFAULT_TIMEOUT)
+        )
       }
     }
   }
